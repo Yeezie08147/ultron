@@ -1,0 +1,62 @@
+# Environment
+.env
+.env.local
+.env.*
+
+# Python Virtual Environments
+.venv/
+venv/
+.venv_win/
+.venv_win313/
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Large Model Binaries (Piper, Kokoro, ONNX)
+voices/
+*.onnx
+*.bin
+*.pt
+*.bin.gz
+
+# Binary & Executables
+cloudflared.exe
+*.exe
+*.mp3
+*.wav
+
+# Data & Screenshots (runtime generated)
+*.db
+data/*.jsonl
+data/active_session.json
+data/.jarvis_output.txt
+data/screenshots/
+*.db-shm
+*.db-wal
+
+# Build
+dist/
+.vite/
+frontend/.vite/
+
+# IDE / System
+.DS_Store
+.vscode/
+.idea/
+.claude/
+.arch/
+
+# Scratch & patch files
+patch_server.py
+restore*.py
+refactor*.py
+apply_patch.py
+wire_ollama*.py
+extracted_actions.txt

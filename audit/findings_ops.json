@@ -1,0 +1,92 @@
+[
+  {
+    "agent": "config+ops",
+    "severity": "critical",
+    "file": "vision_build.py",
+    "line": 212,
+    "title": "BUILD tier runs Claude Code with bypassPermissions on untrusted voice input",
+    "detail": "_build_options() sets permission_mode=\"bypassPermissions\" with full tools (Bash, Read, Write, Edit, Glob), cwd=$HOME, and model=sonnet. run_build() feeds the raw user utterance straight into the agent prompt (\"Build this now: {user_text}\"). Because looks_like_build() fires on any 'make/build/create ... game/app/tool' phrasing from speech-to-text, an arbitrary spoken request becomes an autonomous Claude Code session that can run any Bash command in the user's home directory with NO permission gate. There is no sandbox, no allowed-tools restriction, and no path confinement (it can write/read anywhere $HOME reaches). A misheard or adversarial voice command (or audio from a video/another person) can trigger destructive shell actions.",
+    "fix": "Constrain the BUILD agent: set cwd to the per-build project dir (Path.home()/'Desktop'/name) instead of $HOME; restrict tools to the minimum (Write/Edit/Read/Glob, drop Bash or gate it via allowed_tools/disallowed_tools); and prefer permission_mode='acceptEdits' or a custom can_use_tool callback over blanket bypassPermissions. At minimum, confine writes to the project directory."
+  },
+  {
+    "agent": "config+ops",
+    "severity": "warning",
+    "file": "actions.py",
+    "line": 92,
+    "title": "open_terminal() and Terminal-theming helpers are macOS-only (osascript) — dead/broken on this Linux box",
+    "detail": "open_terminal(), _mark_terminal_as_jarvis(), and _revert_terminal_theme() all shell out to `osascript` with AppleScript (`tell application \"Terminal\"`). This Linux machine has no osascript, so every call fails (proc.returncode != 0 -> 'I had trouble opening Terminal, sir.'). open_terminal is imported and invoked live by server.py handle_open_terminal() (server.py:1827) on the 'open terminal / launch claude code' intent, so that whole user-facing action is silently broken on Linux. The module docstring even claims open_terminal is a 'live helper', which is now false.",
+    "fix": "Replace the osascript path with a Linux terminal launcher (e.g. detect konsole/gnome-terminal/x-terminal-emulator via shutil.which and exec `<term> -e bash -lc '<cmd>'`). Drop the Terminal-theming helpers entirely on Linux. Same fix is needed for the osascript Terminal/Finder blocks living in server.py (handle_build, handle_show_recent, _run_task) which are out of this subsystem but share the root cause."
+  },
+  {
+    "agent": "config+ops",
+    "severity": "warning",
+    "file": "requirements.txt",
+    "line": null,
+    "title": "requirements.txt is badly out of date — misses every heavy runtime dependency the server actually imports",
+    "detail": "The server imports faster_whisper (STT), kokoro + torch + kokoro_onnx (GPU TTS), soundfile and numpy (audio), and claude_agent_sdk (the agent/BUILD tier in vision_build.py and claude_brain.py). None of these are in requirements.txt (only anthropic/httpx/fastapi/uvicorn/pydantic/websockets/playwright/pyyaml are listed). A fresh `pip install -r requirements.txt` produces a venv where TTS, STT, and the entire agent/build tier are missing — the app cannot start its core voice/agent features. The kokoro/transformers compatibility constraint (kokoro 0.7.16 needs transformers 4.49; the venv has 4.49.0 correctly, but it's unpinned so a future install drifts) is also unprotected.",
+    "fix": "Add and pin the real deps: faster-whisper, kokoro, kokoro-onnx, torch (with the correct CUDA index URL), soundfile, numpy, claude-agent-sdk, and transformers==4.49.* (to satisfy kokoro). Generate from the working .venv via `pip freeze` and curate, or split into requirements-core.txt + requirements-gpu.txt."
+  },
+  {
+    "agent": "config+ops",
+    "severity": "warning",
+    "file": "launch-jarvis.sh",
+    "line": 22,
+    "title": "Launcher never restarts a stale backend — old code keeps serving after edits",
+    "detail": "Step 3 starts the backend only `if ! curl ... http://127.0.0.1:$PORT/`. If a previous server.py is already serving on 8340, the launcher reuses it and never restarts, so code changes (the whole point of the 'always launches the CURRENT build' header comment) do NOT take effect for the backend — only the frontend is rebuilt. This is the documented gotcha and it directly contradicts the script's own stated purpose. Operators silently run old backend code believing they're on the latest build.",
+    "fix": "Either kill the existing server before starting (pgrep -f 'server.py --port 8340' | xargs -r kill, then start fresh), or add a /version endpoint the script checks and restarts on mismatch. At minimum, log a clear 'reusing already-running backend (NOT restarted)' warning so the staleness is visible."
+  },
+  {
+    "agent": "config+ops",
+    "severity": "warning",
+    "file": "vision_build.py",
+    "line": 154,
+    "title": "Headless build screenshot uses --no-sandbox Chrome",
+    "detail": "screenshot_html() launches Chrome with `--headless=new --no-sandbox` pointed at file:// URLs of freshly-generated, model-authored HTML. --no-sandbox removes Chrome's renderer sandbox while rendering content the LLM just wrote (which can include arbitrary JS/CDN includes). Combined with the bypassPermissions build agent above, this widens the blast radius of any malicious or buggy generated page.",
+    "fix": "Drop --no-sandbox (the user is not root, so the sandbox works normally). If a sandbox error appears, fix the root cause (e.g. run under a normal user / enable user namespaces) rather than disabling it. Optionally use --headless=new with a restricted profile dir."
+  },
+  {
+    "agent": "config+ops",
+    "severity": "info",
+    "file": ".env",
+    "line": 11,
+    "title": "PIPER_MODEL / WHISPER_MODEL set in .env but server.py does not auto-load .env",
+    "detail": "The .env file itself notes (line 9-10) that server.py does NOT auto-load .env, so PIPER_MODEL only takes effect if exported by launch-jarvis.sh (`set -a; . .env; set +a`). Running `python server.py` directly (as the CLAUDE.md Quick Start step 7 instructs) bypasses launch-jarvis.sh and therefore silently ignores PIPER_MODEL, WHISPER_MODEL, JARVIS_SKIP_PERMISSIONS, and the weather overrides — falling back to defaults (base.en Whisper, default voice). This is a fragile, undocumented coupling between the launcher and the server.",
+    "fix": "Load .env inside server.py at startup (e.g. python-dotenv load_dotenv(), or a tiny manual parser like the one already in monitor.py) so the server has the same config regardless of how it's launched. Add python-dotenv to requirements.txt if used."
+  },
+  {
+    "agent": "config+ops",
+    "severity": "info",
+    "file": "monitor.py",
+    "line": null,
+    "title": "Dead module: monitor.py is never imported or run by the app",
+    "detail": "monitor.py (a log-watching QA tool) is not imported anywhere in the codebase (verified: no `import monitor` outside its own file, and it's a standalone `python monitor.py` script). It carries its own ad-hoc .env parser. It is effectively orphaned ops tooling, not part of the running system.",
+    "fix": "If still wanted, document it as a standalone dev tool in README and move it under a tools/ or scripts/ dir. Otherwise delete it to reduce surface area. (No security impact; flagged as dead code.)"
+  },
+  {
+    "agent": "config+ops",
+    "severity": "info",
+    "file": "ab_testing.py",
+    "line": null,
+    "title": "Dead module: ab_testing.py is only referenced from tests",
+    "detail": "ab_testing.py (ABTester / PromptTemplate, template-version experiment tracking) is imported only inside tests/test_feedback_loop.py and tests/test_e2e_pipeline.py — never by server.py, claude_brain.py, work_mode.py, planner.py, or any runtime module. It depends on pyyaml and a jarvis_data.db schema that the live app does not use. It is dead code kept alive only by its tests.",
+    "fix": "Remove ab_testing.py (and its tests) or wire it into the live template-selection path if A/B testing is actually intended. As-is it is unused weight."
+  },
+  {
+    "agent": "config+ops",
+    "severity": "info",
+    "file": "qa.py",
+    "line": null,
+    "title": "qa.py / suggestions.py effectively dead — only caller (ClaudeTaskManager._run_qa) is broken",
+    "detail": "qa.py (QAAgent) and suggestions.py (suggest_followup) are imported live only transitively: server.py's ClaudeTaskManager._run_qa (server.py:357-410) calls qa_agent.verify(), success_tracker.log_task(), and suggest_followup(), but NONE of qa_agent, success_tracker, or suggest_followup are imported or defined anywhere in server.py — so that code path raises NameError if ever reached. Net effect: qa.py and suggestions.py have no functioning caller; they survive only via tests/test_e2e_pipeline.py and tests/test_feedback_loop.py. (The underlying NameError bug lives in server.py and is out of this subsystem, but it makes these two modules dead in practice.)",
+    "fix": "Either restore the missing imports/definitions in server.py (qa_agent = QAAgent(...), success_tracker, from suggestions import suggest_followup) and verify the dev-task QA flow is actually exercised, or remove qa.py + suggestions.py + their tests if the QA-on-Claude-Code-output feature is abandoned on the Linux build."
+  },
+  {
+    "agent": "config+ops",
+    "severity": "info",
+    "file": "browser.py",
+    "line": 206,
+    "title": "tempfile.mktemp() used for screenshot path (deprecated, race-prone) and unreachable post-return code",
+    "detail": "screenshot() uses tempfile.mktemp() which is deprecated for security reasons (TOCTOU symlink race). Minor here since the path is only handed to Playwright, but it's a flagged-by-linters anti-pattern. Separately, visit() (line 176-184) returns a PageContent before its `await asyncio.sleep(3)` / comment lines, so that trailing 'let user see the page' delay is dead code that never runs.",
+    "fix": "Replace tempfile.mktemp() with tempfile.NamedTemporaryFile(delete=False, suffix='.png').name or mkstemp(). Remove the unreachable sleep after the return in visit() (or move it before the return if the delay is wanted). Note: JarvisBrowser is not imported by any runtime module (only tests/test_browser_integration.py), so the whole module may itself be dead — research now runs via server.py's own Opus/agent path; confirm before keeping it."
+  }
+]

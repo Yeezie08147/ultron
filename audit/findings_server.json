@@ -1,0 +1,155 @@
+[
+  {
+    "agent": "server.py",
+    "severity": "critical",
+    "file": "server.py",
+    "line": 2248,
+    "title": "fix_self sends raw WAV bytes as JSON 'data' instead of base64 — crashes the send / breaks audio",
+    "detail": "In the fix_self branch the audio is sent as {\"type\": \"audio\", \"data\": audio, ...} where `audio` is raw `bytes`. Every other audio send in the file uses base64.b64encode(audio).decode(). ws.send_json() cannot JSON-serialize raw bytes, so this raises TypeError; the exception is uncaught in this branch (no try/except around the send), propagates out of the handler, and the user gets no audio for 'fix yourself' commands. Even if it didn't raise, the frontend expects a base64 string.",
+    "fix": "Change to {\"type\": \"audio\", \"data\": base64.b64encode(audio).decode(), \"text\": response_text} to match every other send site."
+  },
+  {
+    "agent": "server.py",
+    "severity": "critical",
+    "file": "server.py",
+    "line": 312,
+    "title": "ClaudeTaskManager.cancel() can never terminate a running task — process is never stored in self._processes",
+    "detail": "cancel() (line 433) looks up self._processes.get(task_id) to terminate/kill the subprocess, but _run_task() (line 312) creates the osascript process locally and never stores it in self._processes. self._processes is only ever read and pop'd, never assigned. Result: cancelling a 'running' task only flips task.status to 'cancelled' and never stops the underlying claude -p / Terminal work, which keeps running and consuming resources. Cancellation is effectively a no-op on the actual process.",
+    "fix": "Store the spawned process: in _run_task after create_subprocess_exec do self._processes[task.id] = process, and remove it in a finally. (Note: because _run_task spawns osascript which returns immediately, you actually never hold a handle to the real claude process — the design itself can't cancel claude; at minimum track what you do spawn and document the limitation.)"
+  },
+  {
+    "agent": "server.py",
+    "severity": "critical",
+    "file": "server.py",
+    "line": 360,
+    "title": "Auto-QA path references undefined names (qa_agent, success_tracker, suggest_followup) — _run_qa always raises NameError",
+    "detail": "_run_qa() uses qa_agent.verify(...), success_tracker.log_task(...), success_tracker.log_suggestion(...), suggest_followup(...) and qa_agent.auto_retry(...). None of qa_agent or success_tracker are imported or defined anywhere in server.py, and suggest_followup (which lives in suggestions.py) is never imported here either. _run_task schedules asyncio.create_task(self._run_qa(task)) on every completed task, so _run_qa runs, immediately hits NameError on the first reference, and is silently swallowed by the broad `except Exception` at line 416. Net effect: the entire auto-QA / auto-retry / suggestion feature is dead code that never runs, with the failure hidden by a catch-all log.error.",
+    "fix": "Either remove the dead _run_qa scheduling, or import/instantiate the real objects (from qa import ...; from suggestions import suggest_followup; from tracking import success_tracker) and verify those modules expose the expected interfaces. At minimum, narrow the except so NameError isn't silently buried."
+  },
+  {
+    "agent": "server.py",
+    "severity": "critical",
+    "file": "server.py",
+    "line": 1451,
+    "title": "Streaming voice speaks [ACTION:X] tags aloud — action tags are TTS'd before they are stripped",
+    "detail": "In the streaming chat path (respond_stream → stream_tts_response, line 2491), every sentence chunk is synthesized and pushed to the client AS IT ARRIVES (lines 1468-1474). Action extraction only happens afterward at line 2515 (extract_action on the already-accumulated full text). If the brain emits a reply ending in '[ACTION:BUILD] make a snake game', stream_tts_response will have already spoken the literal '[ACTION:BUILD] make a snake game' text aloud. The non-streaming path strips the action first; the streaming path cannot. Users hear JARVIS read action tags / targets out loud.",
+    "fix": "Buffer streamed text and detect a partial '[ACTION:' marker; stop speaking once the marker appears (don't TTS the tail), or have respond_stream emit a sentinel/structured event when it starts an action tag so stream_tts_response can withhold that chunk from synthesis."
+  },
+  {
+    "agent": "server.py",
+    "severity": "warning",
+    "file": "server.py",
+    "line": 2143,
+    "title": "Barge-in / response cancellation is non-functional — _cancel_response and my_response_id are set but never checked",
+    "detail": "On each new utterance the handler bumps _current_response_id, captures my_response_id, sets _cancel_response=True, sleeps 50ms, then resets it to False (lines 2261-2265). But nothing in generate_response, stream_tts_response, the TTS send block, or any background task ever reads _cancel_response or compares my_response_id to _current_response_id. So an in-flight long response (e.g. a slow streamed reply or a single-shot synth) is NOT actually cancelled when the user barges in — both the old and new responses' audio will be sent, causing overlapping/echoing speech. The 50ms sleep adds latency to every turn for no benefit.",
+    "fix": "Actually consult the id: pass my_response_id into the response/send code and abort sends when my_response_id != _current_response_id (e.g. check inside stream_tts_response's loop and before each ws.send_json of audio). Or remove the dead machinery if barge-in is handled purely client-side."
+  },
+  {
+    "agent": "server.py",
+    "severity": "warning",
+    "file": "server.py",
+    "line": 1661,
+    "title": "CORS allow_origins='*' combined with allow_credentials=True is invalid and over-permissive",
+    "detail": "CORSMiddleware is configured with allow_origins=['*'], allow_credentials=True, allow_methods=['*'], allow_headers=['*']. Per the CORS spec a wildcard origin cannot be combined with credentials; Starlette will not echo a usable Access-Control-Allow-Origin for credentialed requests, and more importantly this opens every REST endpoint (including /api/settings/keys which writes the Anthropic/Fish API keys to .env, /api/restart which os.execv-restarts the process, and /api/fix-self) to any website the user visits while the server is running on 0.0.0.0. A malicious page can POST new API keys or trigger a restart.",
+    "fix": "Restrict allow_origins to the actual frontend origin(s) (e.g. http://localhost:5173, the served origin) and drop allow_credentials unless needed. Add auth or bind sensitive control endpoints to localhost only."
+  },
+  {
+    "agent": "server.py",
+    "severity": "warning",
+    "file": "server.py",
+    "line": 325,
+    "title": "_run_task completion heuristic falsely marks tasks complete on >100 bytes of partial output",
+    "detail": "The monitor loop treats a task as 'completed' if the output file contains the marker OR len(content) > 100 (line 329). Claude's streamed output easily exceeds 100 chars long before it finishes, so any non-trivial task is marked completed and its partial output captured as task.result while claude is still running. This then triggers _notify(task_complete) and the (broken) QA path with a truncated result, and the real completion marker is never awaited.",
+    "fix": "Only mark completed on the explicit '--- JARVIS TASK COMPLETE ---' marker; drop the len>100 shortcut (or use it only to detect liveness, not completion)."
+  },
+  {
+    "agent": "server.py",
+    "severity": "warning",
+    "file": "server.py",
+    "line": 2388,
+    "title": "Accesses private WorkSession._message_count — fragile coupling, AttributeError risk",
+    "detail": "The work-mode stall detector reads work_session._message_count (a private attribute of WorkSession). If WorkSession is refactored or that attribute isn't initialized before first send, this raises AttributeError inside the try block at line 2285, which is caught only by the outer handler except at 2678, sending the generic 'Something went wrong' and wasting the turn. Relying on a leading-underscore attribute of another module is brittle.",
+    "fix": "Expose a public accessor/property on WorkSession (e.g. message_count) and use getattr(work_session, 'message_count', 0) defensively."
+  },
+  {
+    "agent": "server.py",
+    "severity": "warning",
+    "file": "server.py",
+    "line": 122,
+    "title": "Blocking urllib calls inside event-loop-reachable code (weather location/fetch)",
+    "detail": "_get_weather_location() and _fetch_weather_string_sync() use urllib.request.urlopen with a 3s timeout (blocking). These are intended to run in the context thread (_refresh_context_sync worker), which is fine, but _get_weather_location is also reachable via _fetch_weather_string_sync only from that thread — OK. The real risk: each has a 3s timeout and they are called sequentially in the worker; if both APIs hang to their timeouts, weather refresh stalls up to 6s per 30s loop. Minor, but more importantly the IP-geolocation/open-meteo calls have no overall circuit breaker, so a persistently-down endpoint is retried every 30s forever. Acceptable on its own thread; flagged because urllib (not httpx/async) is used and a blocking call here would freeze the loop if ever invoked from async context.",
+    "fix": "Keep these strictly off the loop (they are today). Consider widening the refresh interval on repeated failure and switching to httpx with a single shared timeout."
+  },
+  {
+    "agent": "server.py",
+    "severity": "warning",
+    "file": "server.py",
+    "line": 2662,
+    "title": "Single-shot TTS path leaves client stuck in 'speaking' on success; idle only sent on text fallback",
+    "detail": "In the non-streamed branch (line 2666-2674), when audio synth succeeds the server sends {type:audio} but never sends {state:idle} — it relies on the frontend's audioPlayer.onFinished to flip to idle. Only the FAILURE branch (no audio) sends idle. If synthesize_speech returns audio but the frontend never fires onFinished (e.g. audio decode error, or the {type:text} path), or if audio is empty-but-truthy, the orb can be left in 'speaking' indefinitely. The greeting and several other paths DO send idle explicitly, so behavior is inconsistent.",
+    "fix": "Make the contract explicit and consistent: either always send {state:idle} after the audio is queued, or document that idle is purely client-driven and remove the asymmetric idle sends."
+  },
+  {
+    "agent": "server.py",
+    "severity": "warning",
+    "file": "server.py",
+    "line": 222,
+    "title": "Task-manager WebSocket notify list is shared across connections and pruned non-atomically",
+    "detail": "ClaudeTaskManager._websockets is a process-wide list; every voice WS registers into it (line 2131) and unregisters in finally (2696). _notify() iterates and, on send failure, mutates self._websockets while a background task may also be iterating/registering. There's no lock. With multiple concurrent connections (or a background task_complete notify racing a new connection), this can hit 'list changed during iteration' or send to a half-closed socket. Also register_websocket/unregister use list membership (O(n)) and a stale ws that errors only gets removed lazily.",
+    "fix": "Guard _websockets with an asyncio.Lock or use a set and snapshot (list(self._websockets)) before iterating in _notify; remove dead sockets from the snapshot copy."
+  },
+  {
+    "agent": "server.py",
+    "severity": "info",
+    "file": "server.py",
+    "line": 1486,
+    "title": "recently_built and _active_lookups grow unbounded; session_buffer 'never truncated'",
+    "detail": "recently_built (module-global list) is appended on every build/research/visual-build and never trimmed (only [-1] is read). _active_lookups is declared but never populated (get_lookup_status always returns '' — dead feature). session_buffer in the WS handler is explicitly 'never truncated' and grows for the life of the connection. For a long-running server these are slow memory leaks; recently_built also accumulates stale entries with old 'time' fields that are never used.",
+    "fix": "Cap recently_built (e.g. keep last 20), remove the unused _active_lookups/get_lookup_status machinery (or wire it up), and bound session_buffer or drop it since the rolling summary + SQLite log already cover history."
+  },
+  {
+    "agent": "server.py",
+    "severity": "info",
+    "file": "server.py",
+    "line": 62,
+    "title": "Dead Fish Audio config; FISH_API_KEY/FISH_API_URL/FISH_VOICE_ID unused by the actual TTS path",
+    "detail": "TTS is entirely local (Kokoro GPU → Piper → optional CPU Kokoro). FISH_API_KEY, FISH_API_URL and FISH_VOICE_ID are still defined at module load and surfaced in settings endpoints (/api/settings/test-fish, status), implying Fish is the TTS engine. synthesize_speech never calls Fish. This is misleading config/state and the test-fish endpoint validates a key that does nothing.",
+    "fix": "Remove the Fish config and endpoints, or clearly mark them deprecated. Update CLAUDE.md (which still says 'TTS: Fish Audio')."
+  },
+  {
+    "agent": "server.py",
+    "severity": "info",
+    "file": "server.py",
+    "line": 2276,
+    "title": "Uses deprecated asyncio.get_event_loop() + run_in_executor for project scan",
+    "detail": "The lazy project scan calls asyncio.get_event_loop().run_in_executor(None, _scan_projects_sync). Elsewhere the code correctly uses asyncio.to_thread(). get_event_loop() is deprecated when there's no running loop semantics ambiguity and is inconsistent with the rest of the file.",
+    "fix": "Replace with cached_projects = await asyncio.wait_for(asyncio.to_thread(_scan_projects_sync), timeout=3)."
+  },
+  {
+    "agent": "server.py",
+    "severity": "info",
+    "file": "server.py",
+    "line": 1304,
+    "title": "macOS-only design running on Linux — AppleScript/Terminal actions will silently fail",
+    "detail": "Per project memory this server runs on Linux (Kali). Nearly all action handlers (handle_open_terminal, handle_build, _run_task, _focus_terminal_window, handle_show_recent Finder fallback, api_fix_self) shell out to `osascript` / Terminal.app / Finder, which don't exist on Linux. These create_subprocess_exec calls will fail (FileNotFoundError for osascript) — some are awaited without checking returncode, so failures are silent; the user gets a cheerful 'On it, sir' confirmation while nothing happens. DESKTOP_PATH = ~/Desktop and the Whisper/Kokoro CUDA paths are the parts that actually work on this host.",
+    "fix": "Gate AppleScript actions behind a platform check (sys.platform == 'darwin') and provide Linux equivalents (xdg-open, a terminal emulator) or fail loudly so JARVIS doesn't claim success it didn't achieve."
+  },
+  {
+    "agent": "server.py",
+    "severity": "info",
+    "file": "server.py",
+    "line": 300,
+    "title": "Prompt/output temp files written into project dirs without cleanup of .jarvis_output.txt",
+    "detail": "_run_task writes .jarvis_prompt.md and tees claude output to .jarvis_output.txt in the work dir; handle_build writes .jarvis_prompt.txt. The prompt file is unlinked in _run_task (line 349) but .jarvis_output.txt is left behind permanently, and handle_build's .jarvis_prompt.txt is never removed. Minor litter in every generated project; also .jarvis_output.txt content (which may contain prompt/results) persists on disk.",
+    "fix": "Clean up .jarvis_output.txt after reading, and remove handle_build's prompt file once consumed (or use tempfiles outside the project dir)."
+  },
+  {
+    "agent": "server.py",
+    "severity": "info",
+    "file": "server.py",
+    "line": 1663,
+    "title": "Server binds 0.0.0.0 by default exposing control endpoints on the LAN with no auth",
+    "detail": "Default --host is 0.0.0.0 (line 2955), so all endpoints — including /api/settings/keys (writes API keys to .env and process env), /api/restart (os.execv), /api/fix-self (spawns claude with --dangerously-skip-permissions), and the unauthenticated /ws/voice — are reachable from any host on the network. There is no authentication anywhere. Combined with the wildcard CORS, this is a meaningful exposure on a shared/lab network.",
+    "fix": "Default to host=127.0.0.1, require an explicit flag/token to bind publicly, and add a shared-secret or localhost-only guard on the settings/restart/fix-self endpoints."
+  }
+]

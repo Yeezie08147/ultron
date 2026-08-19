@@ -1,0 +1,74 @@
+[
+  {
+    "agent": "brain+speech",
+    "severity": "critical",
+    "file": "claude_brain.py",
+    "line": 553,
+    "title": "Mid-stream API failure replays the turn — JARVIS double-speaks",
+    "detail": "In respond_stream, if the Anthropic API stream (_api_stream_chat) yields one or more sentence chunks and THEN raises (network blip, mid-stream refusal, connection reset), those chunks have already been yielded and spoken (produced=True). The exception jumps over the `if produced: return` (lines 559-560), is swallowed by `except: pass` (561-562), and execution falls through to the subprocess block (563) which re-runs the ENTIRE turn via _stream_once/_run_once. The user hears the first sentence(s) twice, then a second full reply. The identical bug exists in the subprocess branch at 563-572: a mid-stream error after producing chunks falls through to the one-shot fallback (574) which speaks the whole reply again. The `if produced: return` only protects against errors that occur BEFORE the first chunk; any error after the first chunk causes a replay.",
+    "fix": "Track `produced` across the whole function and gate the fallbacks on it: once any chunk has been yielded, do NOT fall through to a lower tier — either `return` from the except block, or wrap each tier so a post-first-chunk error ends the generator. e.g. `except Exception: \\n    if produced: return \\n    pass` in both the API block (561) and the subprocess block (571), and guard the one-shot fallback (573-585) with `if not produced:`."
+  },
+  {
+    "agent": "brain+speech",
+    "severity": "warning",
+    "file": "claude_brain.py",
+    "line": 405,
+    "title": "API streaming/non-streaming chat tier has no timeout — can hang JARVIS",
+    "detail": "_api_stream_chat (messages.stream) and _api_once_chat (messages.create) use AsyncAnthropic with no per-request timeout. The default SDK request timeout is 10 minutes. If the API stalls (slow first token, half-open connection), the chat tier — the fast, latency-critical path — can block for minutes with no audio produced, and because no chunk was produced the caller is still awaiting. The subprocess one-shot path (_Messages.create) correctly uses asyncio.wait_for(timeout=120), but the API hybrid added no equivalent bound.",
+    "fix": "Construct the client with a tight timeout for the interactive chat tier, e.g. anthropic.AsyncAnthropic(api_key=key, timeout=httpx.Timeout(20.0, connect=5.0)) or wrap _api_once_chat / the _api_stream_chat loop in asyncio.wait_for with a few-second budget, falling through to the subprocess session on TimeoutError."
+  },
+  {
+    "agent": "brain+speech",
+    "severity": "warning",
+    "file": "claude_brain.py",
+    "line": 402,
+    "title": "API chat tier drops usage tracking and refusal handling",
+    "detail": "The streaming server path (stream_tts_response) never calls track_usage, so every chat-tier turn served by the Anthropic API contributes zero to token/cost accounting (get_usage_summary under-reports). Separately, _api_once_chat (420) and _api_stream_chat (402) ignore stop_reason: on a model refusal (stop_reason='refusal', empty content) _api_once_chat returns a _Response with text='' and _api_stream_chat yields nothing, so respond_stream sees produced=False and silently falls through — acceptable for streaming, but _api_once_chat in respond() returns an empty _Response that generate_response turns into an empty spoken reply (JARVIS goes mute for that turn) instead of falling through to the subprocess.",
+    "fix": "In _api_once_chat, if stop_reason=='refusal' or the assembled text is empty, raise so respond()'s except falls through to the subprocess session. For usage: have stream_tts_response (or respond_stream) surface usage from the API stream's get_final_message()/final usage and feed it into track_usage so the API tier is accounted for."
+  },
+  {
+    "agent": "brain+speech",
+    "severity": "warning",
+    "file": "claude_brain.py",
+    "line": 432,
+    "title": "Per-tier locks/sessions created without synchronization — warmup races real turns",
+    "detail": "_lock_for (432) lazily inserts into self._locks, and _ensure_session (437) lazily inserts into self._sessions, both without any guarding lock. warmup() runs as a background task (server.py lifespan _warm_brain) concurrently with the first real user turn. If a turn calls _lock_for('chat') at the same time warmup() does, the two can observe `tier not in self._locks` independently and create two different Lock objects, and _ensure_session can race to connect() two ClaudeSDKClient sessions for the same tier (the loser leaks a connected subprocess). The check-then-set in _ensure_session (439-444) is not atomic across awaits (the `await client.connect()` yields the loop before self._sessions[tier]=client).",
+    "fix": "Pre-create the locks in __init__ for the known tiers (chat/agent/vision) so _lock_for never races, and hold the per-tier lock around the connect-and-store in _ensure_session (or use an asyncio.Lock dedicated to session creation). warmup already takes _lock_for(tier); make the real-turn paths and _ensure_session take it too so only one connect happens per tier."
+  },
+  {
+    "agent": "brain+speech",
+    "severity": "warning",
+    "file": "server.py",
+    "line": 1158,
+    "title": "First TTS call can load the Kokoro model on the event loop, blocking it",
+    "detail": "synthesize_speech calls _get_kokoro_torch() DIRECTLY on the event loop (line 1158) to decide whether to take the GPU path, before dispatching the actual synth to a thread. _get_kokoro_torch is the heavy loader: it imports torch, builds KPipeline on CUDA, and runs a blocking health-check synth ('Online.'). Warmup (_warm_tts) runs this in a thread at startup, but it is a background task — if a user speaks before warmup finishes, the very first synthesize_speech runs the full model build + CUDA health-check synchronously on the event loop, freezing the WebSocket handler (and all other connections) for the load duration. Once loaded it is a cheap no-op, so this is a first-utterance/cold-start foot-gun.",
+    "fix": "Make the readiness check non-blocking on the loop: either gate synthesize_speech on a module-level 'kokoro_ready' flag set only by the warmup thread (fall back to Piper until ready), or run the initial _get_kokoro_torch() probe via asyncio.to_thread as well so the load never executes on the event loop."
+  },
+  {
+    "agent": "brain+speech",
+    "severity": "warning",
+    "file": "server.py",
+    "line": 1296,
+    "title": "Whisper transcription has no internal timeout — a wedged GPU hangs the turn",
+    "detail": "_transcribe_pcm16_sync calls model.transcribe with no time bound; transcribe_utterance wraps it in asyncio.to_thread but to_thread cannot be cancelled — if CTranslate2/CUDA wedges (a known failure mode on a 4GB shared GPU under VRAM pressure, per the lab notes), the worker thread blocks indefinitely and that utterance never produces text. The thread also stays occupied, and the default thread-pool is small, so repeated wedges can exhaust it and stall all off-loop work (TTS included).",
+    "fix": "Bound the decode: run transcription as a cancellable task with asyncio.wait_for, or pre-check audio length and cap it; on timeout return '' (JARVIS asks the user to repeat) and consider flipping _whisper_failed/reloading so a wedged GPU model is rebuilt rather than reused."
+  },
+  {
+    "agent": "brain+speech",
+    "severity": "info",
+    "file": "claude_brain.py",
+    "line": 408,
+    "title": "Chat-tier API call sends only the single user message — no history",
+    "detail": "_api_stream_chat / _api_once_chat send messages=[{'role':'user','content': message}] with system=_CHAT_PROMPT. The subprocess 'chat' tier is a persistent ClaudeSDKClient session that retains conversation memory across turns, but the API hybrid path is stateless per call — when ANTHROPIC_API_KEY is set, the chat tier loses multi-turn continuity that the subscription path had. The wrapped message does include the <JARVIS_CONTEXT> block (which carries last-response anti-repetition + session summary from _build_chat_system), so it is partially mitigated, but turn-to-turn coherence differs between the two backends.",
+    "fix": "If multi-turn coherence on the API tier matters, thread the recent conversation_history into _api_*_chat (the server already keeps history[-20]); otherwise document that the API chat tier is intentionally single-turn so the divergence from the subscription tier is a known tradeoff."
+  },
+  {
+    "agent": "brain+speech",
+    "severity": "info",
+    "file": "claude_brain.py",
+    "line": 306,
+    "title": "Agent/vision tier streams partial messages — tool-call narration may be spoken",
+    "detail": "Both the agent and vision tiers set include_partial_messages=True and _stream_once speaks every text_delta as sentence chunks. The agent tier runs full tools (Bash/Read/Write) and can emit interim narration ('Let me check...', 'Now I'll...') between tool calls, which stream_tts_response will synthesize and speak. Opus-class models narrate more by default. For an action turn ('open youtube') the user may hear several seconds of pre-action narration before the one-line confirmation, inflating perceived latency.",
+    "fix": "For the agent/vision tiers, prefer the final result text over streamed partials (e.g. only stream the chat tier, and use _run_once's ResultMessage for agent/vision), or strip/suppress interim narration; alternatively add a system-prompt instruction to stay silent between tool calls and emit only the final one-sentence reply."
+  }
+]

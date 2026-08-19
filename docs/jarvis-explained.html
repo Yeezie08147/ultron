@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JARVIS × Claude Code — How it works</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root{
+    --bg:#070b10; --panel:#0d141c; --panel2:#111c27; --line:#1d2e3d;
+    --cyan:#36d3ff; --cyan-dim:#1d8fb0; --amber:#ffb547; --green:#54e0a0;
+    --text:#cfe6f2; --muted:#7e98a8; --red:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 50% -10%,#0c1722 0%,var(--bg) 60%);
+       color:var(--text);font:16px/1.6 "Segoe UI",system-ui,sans-serif;padding:0 0 80px}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 22px}
+  header{text-align:center;padding:56px 22px 22px}
+  header h1{font-size:40px;margin:0;letter-spacing:.5px}
+  header h1 span{color:var(--cyan)}
+  header p{color:var(--muted);font-size:18px;margin:10px 0 0}
+  .vision{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+          border-left:4px solid var(--cyan);border-radius:12px;padding:20px 24px;margin:24px 0}
+  .vision b{color:var(--cyan)}
+  h2{margin:46px 0 14px;font-size:25px;border-bottom:1px solid var(--line);padding-bottom:8px}
+  h2 .n{color:var(--cyan-dim);font-size:16px;margin-right:8px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 22px;margin:14px 0}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:720px){.grid{grid-template-columns:1fr}}
+  .pill{display:inline-block;background:#11212c;border:1px solid var(--line);border-radius:20px;
+        padding:3px 12px;font-size:13px;color:var(--cyan);margin:3px 4px 3px 0}
+  .mermaid{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin:14px 0;text-align:center}
+  table{width:100%;border-collapse:collapse;margin:10px 0}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;font-size:14.5px}
+  th{background:#0f1b25;color:var(--cyan)}
+  td code,p code,li code{background:#0a141c;border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--amber);font-size:13px}
+  .good{color:var(--green)} .warn{color:var(--amber)} .bad{color:var(--red)}
+  ul{margin:8px 0 8px 2px;padding-left:20px} li{margin:5px 0}
+  .tag{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+  .big{font-size:21px;color:var(--cyan);font-weight:600}
+  footer{text-align:center;color:var(--muted);margin-top:50px;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1><span>JARVIS</span> × Claude Code</h1>
+  <p>How it works now, what you can do, and where it's going</p>
+</header>
+
+<div class="wrap">
+
+  <div class="vision">
+    <span class="tag">Your goal</span><br/>
+    A JARVIS that <b>actually feels like you're talking to it</b> — snappy, natural conversation —
+    that is <b>hard-wired to Claude Code</b> so it can do <b>everything</b>
+    <code>claude --dangerously-skip-permissions</code> can do: run commands, read/write files,
+    browse, build software, control your machine — all by voice.
+  </div>
+
+  <!-- ─────────────────────────────────────────── -->
+  <h2><span class="n">01</span>The big idea — one persistent brain</h2>
+  <div class="card">
+    <p><b>Before:</b> every time you spoke, JARVIS launched a <b>brand-new</b> <code>claude -p</code>
+    process. That "cold start" (boot + load context) happened <i>every single turn</i> — the main reason
+    it felt sluggish. It also forgot what it just did between turns.</p>
+    <p><b>Now (Phase&nbsp;1, done ✅):</b> JARVIS holds <b>one long-lived Claude Code session</b> open and
+    talks to it across turns. No cold start, real memory, and the full Claude Code toolbox is live the
+    whole time.</p>
+    <p class="big">Warm turns dropped from a full cold-start to ~2.3&nbsp;seconds — and it now remembers the conversation.</p>
+  </div>
+
+  <h2><span class="n">02</span>The flow — what happens when you speak</h2>
+  <div class="mermaid">
+flowchart TD
+    A([🎤 You speak]) --> B[Browser STT<br/>Web Speech API]
+    B --> C{Fast action<br/>match?}
+    C -- "yes: open / check / show" --> D[Hardcoded handler<br/>instant]
+    C -- "no" --> E[[Persistent Claude Code Session<br/>bypassPermissions · full tools]]
+    E --> F{Needs to DO<br/>something?}
+    F -- yes --> G[Run tools:<br/>Bash · Read · Write · web · MCP]
+    F -- no --> H[Just converse]
+    G --> I[Short JARVIS reply]
+    H --> I
+    D --> I
+    I --> J[Piper TTS<br/>local voice]
+    J --> K([🔊 Speaker])
+    E -. remembers every turn .-> E
+    style E fill:#0d2a36,stroke:#36d3ff,stroke-width:2px,color:#cfe6f2
+    style G fill:#10202b,stroke:#54e0a0,color:#cfe6f2
+    style A fill:#111c27,stroke:#36d3ff,color:#cfe6f2
+    style K fill:#111c27,stroke:#36d3ff,color:#cfe6f2
+  </div>
+  <p class="tag">The cyan box is the new persistent session — it stays open and remembers, instead of restarting each turn.</p>
+
+  <!-- ─────────────────────────────────────────── -->
+  <h2><span class="n">03</span>What you can do with it</h2>
+  <div class="grid">
+    <div class="card">
+      <span class="tag">Talk</span>
+      <ul>
+        <li>Natural back-and-forth that remembers context</li>
+        <li>Ask questions, brainstorm, get quick answers</li>
+        <li>Check calendar, mail, screen, weather, tasks</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="tag">Do (full Claude Code)</span>
+      <ul>
+        <li>"Open YouTube / Spotify / any site or app"</li>
+        <li>"Find and read that file", "edit X", "run this"</li>
+        <li>"Build me a small app for…" → real code on disk</li>
+        <li>Anything the shell + Claude Code tools can reach</li>
+      </ul>
+    </div>
+  </div>
+  <div class="card">
+    <span class="pill">Bash</span><span class="pill">Read / Write / Edit</span><span class="pill">Web search + fetch</span>
+    <span class="pill">MCP servers</span><span class="pill">Background builds</span><span class="pill">Memory (SQLite)</span>
+    <span class="pill">Calendar / Mail / Notes</span><span class="pill">Screen vision</span>
+  </div>
+
+  <!-- ─────────────────────────────────────────── -->
+  <h2><span class="n">04</span>Running many tasks at once (not waiting)</h2>
+  <div class="card">
+    <p>One session is a <b>single conversation</b> — it does one thing at a time, in order (like one Claude
+    Code chat). To run things <b>in parallel</b>, you don't cram them into that one session; you fan out:</p>
+    <table>
+      <tr><th>Pattern</th><th>How</th><th>Best for</th></tr>
+      <tr><td><b>Background tasks</b></td><td>JARVIS spawns a <i>separate</i> Claude Code session for a long job and keeps chatting with you on the main one. It narrates progress when done.</td><td>"Build X" while you keep talking</td></tr>
+      <tr><td><b>Session pool</b></td><td>Keep N warm sessions; route each new request to a free one → true concurrency.</td><td>Several quick jobs at once</td></tr>
+      <tr><td><b>Fire-and-report</b></td><td>Kick off a task, get an instant "On it, sir," then a voice ping when it finishes.</td><td>Anything slow you don't want to wait on</td></tr>
+    </table>
+    <p class="tag">JARVIS already has a task manager + work-session system — Phase&nbsp;3 wires these into the persistent
+    brain so you can say "do A, and also start B" and it runs B in the background while A continues.</p>
+  </div>
+
+  <!-- ─────────────────────────────────────────── -->
+  <h2><span class="n">05</span>What people add to their JARVIS</h2>
+  <div class="grid">
+    <div class="card"><span class="tag">Presence</span><ul>
+      <li>Wake-word ("Hey Jarvis") — <span class="warn">you removed clap/sleep on purpose</span></li>
+      <li>Always-listening with smart endpointing</li>
+      <li>Barge-in (talk over it) — <span class="good">you have this</span></li>
+    </ul></div>
+    <div class="card"><span class="tag">Senses</span><ul>
+      <li>Local STT (faster-whisper) for speed + offline</li>
+      <li>Camera / screen vision</li>
+      <li>Better TTS voices, emotion, faster streaming</li>
+    </ul></div>
+    <div class="card"><span class="tag">Reach</span><ul>
+      <li>Smart-home control (lights, AC, media)</li>
+      <li>Phone / messaging / email actions</li>
+      <li>Home-Assistant, MQTT, IoT bridges</li>
+    </ul></div>
+    <div class="card"><span class="tag">Brain</span><ul>
+      <li>Long-term memory + RAG over your notes</li>
+      <li>Proactive nudges ("you have a call in 10")</li>
+      <li>Multi-agent: a fleet doing jobs in parallel</li>
+    </ul></div>
+  </div>
+
+  <!-- ─────────────────────────────────────────── -->
+  <h2><span class="n">06</span>My suggestions — the roadmap</h2>
+  <div class="card">
+    <table>
+      <tr><th>Phase</th><th>What</th><th>Why it matters</th><th>Status</th></tr>
+      <tr><td><b>1</b></td><td>Persistent Claude Code brain</td><td>Kills cold start, adds memory + full tools</td><td class="good">✅ done & tested</td></tr>
+      <tr><td><b>2</b></td><td>Streaming voice</td><td>Starts talking ~1s in, not after the whole answer — the biggest "feels alive" jump</td><td class="warn">next</td></tr>
+      <tr><td><b>3</b></td><td>Warm-start + parallel tasks + local STT</td><td>Instant first reply, run jobs concurrently, lower mic latency</td><td>planned</td></tr>
+    </table>
+    <p>My pick: do <b>Phase 2 (streaming)</b> next — combined with the persistent brain, that's what turns
+    it from "fast" into "feels like a real conversation." Then Phase 3 for the parallel-tasks workflow you asked about.</p>
+  </div>
+
+  <!-- ─────────────────────────────────────────── -->
+  <h2><span class="n">07</span>Test JARVIS — live guide</h2>
+
+  <div class="vision" style="border-left-color:var(--amber)">
+    <span class="tag">Status right now</span><br/>
+    <b class="warn">⏳ Don't test yet — wait for the spoken "all clear."</b> A background agent is moving the
+    voice to the GPU and making it fast + low-CPU; the PyTorch download is ~2&nbsp;GB, so a realistic wait is
+    <b>~5–15 minutes</b> under current load. Testing before then = busy CPU + slow speech. I'll announce on the
+    speaker the moment the server is restarted and my session goes idle.
+  </div>
+
+  <div class="card">
+    <span class="tag">What's running</span>
+    <ul>
+      <li>🔧 <b>GPU-TTS agent</b> — installing PyTorch, switching the voice to the GPU, adding an instant Piper fallback, throttling the idle UI. <span style="color:var(--muted)">(keeps the CPU busy while it works)</span></li>
+      <li>🟢 <b>JARVIS server</b> (port 8340) — GPU Whisper hearing, Daniel voice, streaming, anti-echo, local voice-detection.</li>
+      <li>🧠 <b>My Claude Code session</b> — goes fully idle the moment the agent finishes.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <span class="tag">The test script — say each, note what happens</span>
+    <table>
+      <tr><th>#</th><th>Say this</th><th>What should happen</th></tr>
+      <tr><td>1</td><td>"Hello, Jarvis."</td><td>Short reply in Daniel's voice, ~1–3s</td></tr>
+      <tr><td>2</td><td>"What time is it?" / "What's the weather?"</td><td>Correct and brief</td></tr>
+      <tr><td>3</td><td>"Open YouTube."</td><td>A YouTube window actually opens</td></tr>
+      <tr><td>4</td><td><i>talk over it mid-reply</i></td><td>It stops and starts listening (interrupt)</td></tr>
+      <tr><td>5</td><td>A long sentence, then pause</td><td>It waits for you to finish — no cut-off</td></tr>
+      <tr><td>6</td><td>Stay quiet right after it speaks</td><td>It does NOT answer its own voice (echo)</td></tr>
+      <tr><td>7</td><td>A follow-up about the last thing</td><td>It remembers the context</td></tr>
+    </table>
+  </div>
+
+  <div class="grid">
+    <div class="card"><span class="tag">How to test well</span><ul>
+      <li>Speak clearly; <b>pause ~0.5s</b> after you finish so the detector ends your turn.</li>
+      <li>One thing at a time; let it finish — or interrupt on purpose to test #4.</li>
+      <li>Watch the orb: it reacts to listening / thinking / speaking.</li>
+    </ul></div>
+    <div class="card"><span class="tag">Tell me afterward (I fix in order)</span><ul>
+      <li>Speed feel — how long before it starts talking?</li>
+      <li>Hearing accuracy — did it get your words right?</li>
+      <li>Interrupt — did talking over it work every time?</li>
+      <li>Any <span class="bad">stuck / repeated / echo / glitch</span> moments.</li>
+    </ul></div>
+  </div>
+
+  <!-- ─────────────────────────────────────────── -->
+  <h2><span class="n">08</span>Idea backlog — 200+ things JARVIS could do</h2>
+  <div class="card">
+    <p>The full brain-dump. <b>Don't chase breadth</b> — finish the fast/reliable core first, then tick off a
+    small set that delights you most. <span class="good">green = done</span>, <span class="warn">amber = in progress</span>.
+    Top joy-per-effort bets: <b>smart-home control (H)</b>, <b>continuous conversation + instant ack (F)</b>,
+    <b>long-term memory (K)</b>, <b>morning brief / proactivity (L)</b>.</p>
+  </div>
+
+  <div class="grid" style="font-size:13.5px">
+    <div class="card"><span class="tag">A · Speed / performance</span><p>1 <span class="warn">GPU TTS</span> · 2 <span class="good">GPU Whisper</span> · 3 persona→base prompt (cached) · 4 prompt caching · 5 greeting fast-path · 6 sub-sentence TTS chunking · 7 parallel TTS workers · 8 streaming STT · 9 tiny.en option · 10 int8/quantized · 11 pre-warm on boot · 12 keep session warm · 13 cache trivia answers · 14 extend local classifier · 15 lazy-load features · 16 lower audio bitrate · 17 trim allocations · 18 brain keep-alive</p></div>
+
+    <div class="card"><span class="tag">B · Reliability</span><p>19 auto-reconnect brain · 20 auto-restart STT/TTS · 21 watchdog · 22 GPU→CPU→Piper degradation · 23 per-stage timeouts · 24 recover without breaking chat · 25 crash logging · 26 systemd auto-restart · 27 offline mode · 28 "lost connection" handling · 29 VAD self-recovery · 30 state-machine hardening · 31 memory cleanup</p></div>
+
+    <div class="card"><span class="tag">C · Voice / TTS</span><p>32 <span class="warn">GPU Daniel</span> · 33 multiple voices · 34 clone real JARVIS (XTTS/F5) · 35 live speech-rate · 36 expressive prosody · 37 emphasis (SSML) · 38 night-quiet mode · 39 alert vs chat tone · 40 pronunciation dict · 41 natural pauses · 42 thinking-hum · 43 volume auto-adjust</p></div>
+
+    <div class="card"><span class="tag">D · Hearing / STT / VAD</span><p>44 <span class="good">GPU Whisper</span> · 45 bigger model option · 46 partial transcription · 47 speaker ID · 48 wake word option · 49 custom vocab boost · 50 multi-language · 51 accent adaptation · 52 noise-robust VAD · 53 software echo-cancel · 54 mic selection · 55 push-to-talk</p></div>
+
+    <div class="card"><span class="tag">E · Brain / intelligence</span><p>56 two-tier brain · 57 tools only when needed · 58 model switching · 59 "think harder" mode · 60 multi-step planning · 61 self-verify actions · 62 express uncertainty · 63 clarifying questions · 64 context summarization · 65 learn preferences · 66 domain modes · 67 chain bg tasks · 68 parallel tasks + narration · 69 "here's why" reasoning</p></div>
+
+    <div class="card"><span class="tag">F · Conversation</span><p>70 continuous conversation · 71 instant "right away" ack · 72 perfect barge-in · 73 "cancel that"/undo · 74 "repeat that" · 75 slower/louder commands · 76 "it/that" carryover · 77 confirm risky actions · 78 banter/small talk · 79 "stop" long answers · 80 tone matching</p></div>
+
+    <div class="card"><span class="tag">G · UI / visual</span><p>81 <span class="warn">idle-FPS throttle</span> · 82 live transcript on screen · 83 captions · 84 richer orb states · 85 waveform/spectrum · 86 state indicators · 87 notification toasts · 88 "what can I say?" overlay · 89 settings panel · 90 themes · 91 minimal vs dashboard · 92 HUD clock/weather/cal · 93 multi-monitor · 94 mini always-on-top orb · 95 history view · 96 confidence meter · 97 boot animation · 98 dark/light/auto</p></div>
+
+    <div class="card"><span class="tag">H · Smart home / IoT (your lab)</span><p>99 Aqara lights/sensors · 100 Atomberg fans · 101 camera feed (Aqara G5) · 102 scenes ("good night") · 103 sensor-triggered actions · 104 Jio STB control · 105 Echo/Alexa bridge · 106 AC/temperature · 107 energy monitoring · 108 presence welcome · 109 voice automations · 110 security/camera alerts</p></div>
+
+    <div class="card"><span class="tag">I · System / desktop</span><p>111 open/switch apps · 112 window tiling · 113 volume/brightness/media · 114 screenshot + describe · 115 file search & open · 116 clipboard "copy that" · 117 dictate into any app · 118 run scripts · 119 system status · 120 sleep/restart/lock · 121 virtual-desktop switch · 122 read notifications · 123 wifi/BT control</p></div>
+
+    <div class="card"><span class="tag">J · Productivity</span><p>124 calendar (CalDAV/Google) · 125 email read/draft · 126 reminders/alarms · 127 to-do mgmt · 128 voice notes · 129 timers · 130 unit/currency · 131 calculations · 132 definitions · 133 translation · 134 web search · 135 summarize doc · 136 "morning brief" · 137 meeting transcription</p></div>
+
+    <div class="card"><span class="tag">K · Memory / personalization</span><p>138 long-term cross-session memory · 139 remember preferences · 140 remember facts about you · 141 recall past chats · 142 "remember that…" · 143 forget/edit memories · 144 time-aware greetings · 145 learn routines · 146 context from your files · 147 memory privacy controls</p></div>
+
+    <div class="card"><span class="tag">L · Proactivity / ambient</span><p>148 spoken cal reminders · 149 task-done pings · 150 "it's late, sir" · 151 weather alerts · 152 news briefing · 153 follow-up reminders · 154 idle suggestions · 155 anomaly alerts (disk/battery) · 156 break/water nudges · 157 morning/evening routines</p></div>
+
+    <div class="card"><span class="tag">M · Media / entertainment</span><p>158 music control (playerctl) · 159 "play X on Spotify/YouTube" · 160 queue/playlist · 161 podcasts · 162 read articles/audiobooks · 163 jokes/trivia/stories · 164 focus/ambient sounds · 165 movie/show info</p></div>
+
+    <div class="card"><span class="tag">N · Coding / Claude Code</span><p>166 "build me X" (bg build) · 167 voice code review · 168 "what does this file do?" · 169 run tests + report · 170 git by voice · 171 deploy/run servers · 172 debug help · 173 project status/TODOs · 174 generate boilerplate · 175 full voice dev (work mode)</p></div>
+
+    <div class="card"><span class="tag">O · Platform / advanced</span><p>176 run on boot (systemd) · 177 mobile/remote companion · 178 control from phone · 179 multi-device sync · 180 plugin/skill system · 181 integration API · 182 global hotkey · 183 multi-user profiles · 184 cloud backup · 185 usage dashboard · 186 A/B response testing · 187 personality dial</p></div>
+
+    <div class="card"><span class="tag">P · Fun / polish / a11y</span><p>188 easter eggs/quotes · 189 custom wake/sleep phrases · 190 holiday/birthday awareness · 191 startup sound · 192 multiple personas (JARVIS/FRIDAY) · 193 contextual humor · 194 milestone callouts · 195 demo mode · 196 large-text/high-contrast · 197 screen-free mode · 198 keyboard-only control · 199 adjustable verbosity · 200 "explain like I'm five" · 201 time-of-day personality</p></div>
+  </div>
+
+  <footer>JARVIS × Claude Code · generated for Utsav · open this file anytime: <code>jarvis/docs/jarvis-explained.html</code></footer>
+</div>
+
+<script>
+  mermaid.initialize({startOnLoad:true, theme:"dark",
+    themeVariables:{primaryColor:"#0d141c", lineColor:"#36d3ff", fontFamily:"Segoe UI"}});
+</script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+[
+  {
+    "agent": "memory+db",
+    "severity": "critical",
+    "file": "memory.py",
+    "line": 27,
+    "title": "No busy_timeout set — concurrent writers raise 'database is locked' and crash the turn",
+    "detail": "_get_db() opens a fresh connection and enables WAL but never sets PRAGMA busy_timeout (default 0). The same data/jarvis.db is written concurrently from multiple contexts every turn: log_turn runs via asyncio.to_thread (server.py:2628-2629), extract_memories calls remember() as a background task (server.py:2657), record_action runs from dispatch tasks, and recall() issues an UPDATE on the event loop. With WAL, readers don't block writers but two writers still serialize, and with busy_timeout=0 the loser immediately raises sqlite3.OperationalError: 'database is locked'. The write helpers (remember, log_turn, create_task, complete_task, create_note) have NO try/except, so that exception propagates and aborts the chat turn or loses the data.",
+    "fix": "In _get_db() add conn.execute('PRAGMA busy_timeout=5000') (and ideally synchronous=NORMAL). Wrap the write helpers in try/except that logs and degrades gracefully. Consider a single serialized writer or a module-level lock for the writer path."
+  },
+  {
+    "agent": "memory+db",
+    "severity": "warning",
+    "file": "memory.py",
+    "line": 1393,
+    "title": "build_memory_context runs 5+ synchronous SQLite queries on the asyncio event loop every turn",
+    "detail": "build_memory_context(text) is invoked synchronously from _build_chat_system (server.py:1393), which is called on the event loop for every chat turn. Each call runs get_open_tasks(), recall() (which also performs N writes to update access_count), get_important_memories(), get_recent_actions(), and format_recent_conversation() -> get_recent_conversation() — each opening/closing its own connection. All of this blocks the event loop (TTFT impact the actions=4/convo=4 trim was trying to address) and the recall() write competes for the write lock with the issue above. Unlike log_turn, this path is NOT wrapped in asyncio.to_thread.",
+    "fix": "Call build_memory_context via await asyncio.to_thread(build_memory_context, text) from _build_chat_system's async caller, or make _build_chat_system async. Reuse a single connection inside build_memory_context instead of opening one per sub-query."
+  },
+  {
+    "agent": "memory+db",
+    "severity": "warning",
+    "file": "memory.py",
+    "line": 156,
+    "title": "recall() performs a write (UPDATE access_count) on every call — write amplification on the read-hot path",
+    "detail": "recall() is called on every chat turn via build_memory_context. After the SELECT it loops over results issuing 'UPDATE memories SET last_accessed=?, access_count=access_count+1' then commits. This turns a read into a write under the lock (compounding the busy_timeout issue), on the event loop. If the MATCH SELECT raises, the except sets results=[] but conn.commit()/conn.close() still run, which is fine, but the common path always writes.",
+    "fix": "Make the access-count bump optional/batched/best-effort (e.g. UPDATE ... WHERE id IN (...) in one statement, wrapped in try/except), or skip it when recall is invoked from build_memory_context's hot path."
+  },
+  {
+    "agent": "memory+db",
+    "severity": "warning",
+    "file": "memory.py",
+    "line": 519,
+    "title": "extract_memories calls synchronous remember() (blocking SQLite write) on the event loop",
+    "detail": "extract_memories is async (awaits the Anthropic call) but after parsing it calls the synchronous remember() (line 539) which opens a connection and does INSERT + INSERT-into-FTS + commit. It is launched via asyncio.create_task (server.py:2657), so the blocking DB write executes on the event loop thread, and competes for the same write lock as log_turn/record_action.",
+    "fix": "Wrap the remember() calls in await asyncio.to_thread(...), or batch all extracted items into a single transaction executed off-loop."
+  },
+  {
+    "agent": "memory+db",
+    "severity": "warning",
+    "file": "memory.py",
+    "line": 76,
+    "title": "Unbounded table growth — conversation and memories grow forever with no pruning/retention",
+    "detail": "log_turn appends 2 rows to the conversation table every turn and there is no DELETE/prune/VACUUM anywhere in memory.py (grep confirms only the access-count UPDATE and complete_task status UPDATE exist). extract_memories and record_action also append to memories indefinitely. Reads only fetch recent N so query latency stays roughly constant, but the DB file grows without bound and stale/duplicate memories accumulate in FTS and degrade recall relevance over time.",
+    "fix": "Add a retention/prune routine (e.g. keep last N conversation rows or rows newer than X days; cap memories per type or by importance) run periodically or on init_db, followed by VACUUM/optimize and FTS 'optimize'."
+  },
+  {
+    "agent": "memory+db",
+    "severity": "warning",
+    "file": "tracking.py",
+    "line": 365,
+    "title": "SuccessTracker is never instantiated/imported — success_tracker references are NameErrors (dead, crash-on-call)",
+    "detail": "server.py uses success_tracker.log_task/log_suggestion at lines 365, 381, 401, 409 (inside ClaudeTask._run_qa retry path) but never imports tracking or assigns success_tracker (grep across the repo finds no 'success_tracker =', no 'from tracking', no 'import tracking', and no star import). If the _run_qa branch ever executes, 'success_tracker' raises NameError and the QA/retry task dies. tracking.py's entire SuccessTracker class is therefore unwired dead code. (Note: qa_agent is similarly undefined but is outside the memory subsystem.) Separately, SuccessTracker writes to a DIFFERENT database file jarvis_data.db at repo root, not data/jarvis.db.",
+    "fix": "Either remove the success_tracker call sites, or instantiate it once (success_tracker = SuccessTracker()) at module load in server.py and import SuccessTracker from tracking. Confirm the intended DB path (data/ vs repo root)."
+  },
+  {
+    "agent": "memory+db",
+    "severity": "warning",
+    "file": "tracking.py",
+    "line": 23,
+    "title": "SuccessTracker shares one check_same_thread=False connection with no locking",
+    "detail": "If SuccessTracker is ever wired up, it holds a single sqlite3 connection opened with check_same_thread=False and reuses it across all calls. log_task is called from async QA tasks (server.py _run_qa). A single sqlite3 Connection is NOT safe for concurrent use from multiple threads/tasks even with check_same_thread=False — overlapping execute/commit on one connection can corrupt cursor state or raise 'recursive use of cursors'/'database is locked'. The methods do catch Exception and log.warning, so writes silently drop rather than crash, meaning tracking data can be silently lost under concurrency.",
+    "fix": "Open a connection per operation (like memory.py) or guard the shared connection with a threading.Lock; set busy_timeout. Treat silent-drop on metrics as acceptable but document it."
+  },
+  {
+    "agent": "memory+db",
+    "severity": "warning",
+    "file": "dispatch_registry.py",
+    "line": 18,
+    "title": "Dispatch DB writes have no busy_timeout and no error handling; collide with memory writes on the same file",
+    "detail": "dispatch_registry.py opens data/jarvis.db (same file as memory.py) with WAL but no busy_timeout, and register()/update_status() do INSERT/UPDATE+commit with no try/except. These run from async dispatch tasks (server.py:2307, 2320, 2556, 842, 914) concurrently with log_turn/extract_memories/record_action against the same DB. A 'database is locked' here raises into _execute_prompt_project and can leave a dispatch row stuck in 'building'/'pending' (since update_status to 'completed' never lands), which then poisons format_for_prompt / get_active forever.",
+    "fix": "Set PRAGMA busy_timeout in _get_db(); wrap update_status in try/except with retry; consider a periodic sweep that marks stale 'building' dispatches as failed."
+  },
+  {
+    "agent": "memory+db",
+    "severity": "info",
+    "file": "memory.py",
+    "line": 432,
+    "title": "build_memory_context dedup uses fragile \"'relevant' in dir()\" guard for a possibly-unbound local",
+    "detail": "'relevant' is only assigned inside 'if len(user_message) > 5'. Line 432 references it as (relevant if 'relevant' in dir() else []) to avoid NameError when the branch is skipped. This happens to work (dir() returns in-scope local names), but it is brittle — any refactor that pre-binds the name, or a reader assuming dir() is the wrong API, breaks the dedup silently. It also re-runs dir() per comprehension iteration.",
+    "fix": "Initialize 'relevant = []' at the top of build_memory_context and drop the dir() guard; then the comprehension can reference relevant directly."
+  },
+  {
+    "agent": "memory+db",
+    "severity": "info",
+    "file": "memory.py",
+    "line": 202,
+    "title": "record_action dedup is non-atomic across two separate connections",
+    "detail": "record_action calls get_recent_actions(limit=3) (one connection) then remember() (another connection). Two concurrent record_action calls with the same description can both pass the dedup check before either inserts, producing duplicate action rows. Low impact (cosmetic prompt noise), but defeats the stated dedup intent under concurrency.",
+    "fix": "Do the dedup-check and insert in a single connection/transaction, or add a UNIQUE-ish guard / check the last row inside the same connection before INSERT."
+  },
+  {
+    "agent": "memory+db",
+    "severity": "info",
+    "file": "memory.py",
+    "line": 125,
+    "title": "FTS sanitizer drops short/quoted terms and can yield empty queries, silently returning no memories",
+    "detail": "_sanitize_fts_query strips ', \", *, - and discards all words of length <= 2, then ORs the first 5. A user message composed only of short/stripped tokens (e.g. 'is it ok?', 'do it') sanitizes to '' and recall()/search_* return [] — so RELEVANT MEMORIES is silently omitted from context with no signal. Also OR-joining all terms makes recall low-precision (any single common word matches), which interacts with the unbounded-growth finding to surface noise.",
+    "fix": "Lower the length filter or keep at least one token; fall back to recent/important memories when the sanitized query is empty; consider phrase or AND matching for precision and quoting tokens for FTS rather than dropping them."
+  }
+]
