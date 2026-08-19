@@ -104,6 +104,7 @@ import dns_lookup
 import display_controller
 import windows_agent_bridge
 import whisper_flow
+import frequency_inverter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 log = logging.getLogger("ultron")
@@ -1803,6 +1804,18 @@ def detect_action_fast(text: str) -> dict | None:
         target_elem = re.sub(r'\s+button$', '', target_elem).strip()
         return {"action": "click_ui", "target": target_elem}
 
+    # Frequency Reversal, RDC & Table Flip Matrix
+    if any(p in t for p in ["go back a frequency through rdc", "flip the tables through rdc", "rdc frequency flip"]):
+        return {"action": "rdc_frequency_protocol", "target": text}
+    if any(p in t for p in ["go back a frequency", "reverse frequency", "invert frequency", "frequency reversal", "shift frequency", "reverse the frequency"]):
+        return {"action": "reverse_frequency"}
+    if any(p in t for p in ["flip the tables", "flip table", "flip the table", "table flip", "flip tables"]):
+        return {"action": "flip_table", "text": text}
+    if any(p in t for p in ["open rdc", "launch rdc", "remote desktop", "open remote desktop", "start rdc", "connect rdc"]):
+        host_m = re.sub(r'^.*(?:to|host|ip)\s+', '', t).strip()
+        host_m = "" if host_m in t else host_m
+        return {"action": "launch_rdc", "host": host_m}
+
     # Screenshot capture
     if any(p in t for p in ["take a screenshot", "capture screen", "screenshot my screen", "take screenshot"]):
         return {"action": "screenshot"}
@@ -2851,6 +2864,18 @@ async def voice_handler(ws: WebSocket):
                         elif action["action"] == "click_ui":
                             res = windows_agent_bridge.click_element_by_name(action.get("target", ""))
                             response_text = res.get("message", "Targeted UI element.")
+                        elif action["action"] == "rdc_frequency_protocol":
+                            res = frequency_inverter.execute_rdc_frequency_protocol(action.get("target", ""))
+                            response_text = res.get("message", "Frequency inverted through RDC matrix.")
+                        elif action["action"] == "reverse_frequency":
+                            res = frequency_inverter.reverse_frequency()
+                            response_text = res.get("message", "Frequency inverted.")
+                        elif action["action"] == "flip_table":
+                            res = frequency_inverter.flip_table(action.get("text", ""))
+                            response_text = res.get("message", "Tables flipped.")
+                        elif action["action"] == "launch_rdc":
+                            res = frequency_inverter.launch_rdc(action.get("host", ""))
+                            response_text = res.get("message", "Remote Desktop launched.")
                         elif action["action"] == "cyber_sweep":
                             try:
                                 from cyber_defense import scan_network, scan_processes
