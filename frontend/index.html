@@ -11,6 +11,14 @@
 
     <!-- Minimal controls — top right -->
     <div id="controls">
+      <button id="btn-subghz" title="Sub-GHz Radio Matrix">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M4.93 4.93a10 10 0 0 1 14.14 0"/>
+          <path d="M7.76 7.76a6 6 0 0 1 8.48 0"/>
+          <circle cx="12" cy="12" r="2"/>
+          <line x1="12" y1="14" x2="12" y2="22"/>
+        </svg>
+      </button>
       <button id="btn-mute" title="Mute/Unmute">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
@@ -23,6 +31,55 @@
           <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
         </svg>
       </button>
+    </div>
+
+    <!-- Multi-Hardware Matrix Console Modal -->
+    <div id="subghz-modal" style="display:none">
+      <div class="subghz-header">
+        <div class="subghz-title">
+          <span class="subghz-dot">●</span> HARDWARE TRANSCEIVER MATRIX
+        </div>
+        <button id="btn-subghz-close">✕</button>
+      </div>
+      <div class="subghz-body">
+        <div class="subghz-controls-row">
+          <label>SUB-GHZ BAND / FREQ:</label>
+          <select id="subghz-freq">
+            <option value="433.92">433.92 MHz (Standard ISM)</option>
+            <option value="315.00">315.00 MHz (Vehicle / Gate)</option>
+            <option value="868.35">868.35 MHz (EU Telemetry)</option>
+            <option value="915.00">915.00 MHz (US Smart Meter)</option>
+          </select>
+        </div>
+        <div class="subghz-btn-grid">
+          <button id="btn-subghz-read" class="subghz-act-btn" title="Read & Decode Sub-GHz Packet">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20M12 2v20"/></svg>
+            READ SUB-GHZ
+          </button>
+          <button id="btn-subghz-raw" class="subghz-act-btn raw-btn" title="Read Raw IQ Waveform Stream">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            READ RAW IQ
+          </button>
+          <button id="btn-nfc-read" class="subghz-act-btn nfc-btn" title="Read 13.56MHz NFC Card">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="14" x="3" y="5" rx="2"/><circle cx="12" cy="12" r="2"/></svg>
+            READ NFC
+          </button>
+          <button id="btn-rfid-read" class="subghz-act-btn rfid-btn" title="Read 125kHz RFID Proximity Tag">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg>
+            READ RFID
+          </button>
+          <button id="btn-ir-read" class="subghz-act-btn ir-btn" title="Read Infrared Command">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            READ IR
+          </button>
+          <button id="btn-ibutton-read" class="subghz-act-btn ibutton-btn" title="Read Dallas 1-Wire Key">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>
+            READ iBUTTON
+          </button>
+        </div>
+        <div class="subghz-log-header">LIVE HARDWARE TELEMETRY LOG:</div>
+        <div id="subghz-log-console">Hardware Transceiver Matrix Ready...</div>
+      </div>
     </div>
 
     <!-- Terminal Chatbox -->

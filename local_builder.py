@@ -563,7 +563,7 @@ async def build_with_ollama(prompt: str) -> Dict[str, Any]:
             resp = await client.post(
                 "http://127.0.0.1:11434/api/generate",
                 json={
-                    "model": "llama3.1",
+                    "model": "ultron:brain",
                     "prompt": f"Create: {prompt}",
                     "system": system_prompt,
                     "stream": False,

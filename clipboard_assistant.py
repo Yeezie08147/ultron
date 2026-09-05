@@ -78,7 +78,7 @@ async def summarize_clipboard() -> str:
             resp = await client.post(
                 "http://127.0.0.1:11434/api/generate",
                 json={
-                    "model": "llama3.1",
+                    "model": "ultron:brain",
                     "prompt": prompt,
                     "stream": False,
                     "options": {"temperature": 0.3, "num_predict": 100}
@@ -111,7 +111,7 @@ async def fix_clipboard_grammar() -> str:
             resp = await client.post(
                 "http://127.0.0.1:11434/api/generate",
                 json={
-                    "model": "llama3.1",
+                    "model": "ultron:brain",
                     "prompt": prompt,
                     "stream": False,
                     "options": {"temperature": 0.2, "num_predict": 500}
@@ -145,7 +145,7 @@ async def translate_clipboard(target_language: str = "Spanish") -> str:
             resp = await client.post(
                 "http://127.0.0.1:11434/api/generate",
                 json={
-                    "model": "llama3.1",
+                    "model": "ultron:brain",
                     "prompt": prompt,
                     "stream": False,
                     "options": {"temperature": 0.2, "num_predict": 500}
@@ -179,7 +179,7 @@ async def explain_clipboard_code() -> str:
             resp = await client.post(
                 "http://127.0.0.1:11434/api/generate",
                 json={
-                    "model": "llama3.1",
+                    "model": "ultron:brain",
                     "prompt": prompt,
                     "stream": False,
                     "options": {"temperature": 0.3, "num_predict": 120}

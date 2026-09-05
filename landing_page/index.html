@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ULTRON 2.0 — Autonomous Intelligence & Multi-Hardware Matrix</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #070402;
+      --bg-card: rgba(22, 10, 4, 0.75);
+      --bg-card-hover: rgba(35, 16, 6, 0.9);
+      --accent-orange: #FF7800;
+      --accent-amber: #FFAA1E;
+      --accent-crimson: #DC3C14;
+      --accent-cyan: #00F0FF;
+      --text-main: #FFFFFF;
+      --text-muted: #B39A88;
+      --border-glow: rgba(255, 120, 0, 0.35);
+      --border-glow-bright: rgba(255, 120, 0, 0.85);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Rajdhani', sans-serif;
+      overflow-x: hidden;
+      line-height: 1.6;
+    }
+
+    /* Ambient Canvas */
+    #particles-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.65;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Top Navigation */
+    header {
+      padding: 24px 0;
+      border-bottom: 1px solid rgba(255, 120, 0, 0.15);
+      backdrop-filter: blur(15px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(7, 4, 2, 0.8);
+    }
+
+    .nav-wrapper {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      color: var(--accent-orange);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-shadow: 0 0 15px rgba(255, 120, 0, 0.5);
+    }
+
+    .logo-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      background: rgba(255, 120, 0, 0.2);
+      border: 1px solid var(--accent-orange);
+      border-radius: 4px;
+      color: #fff;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 28px;
+      align-items: center;
+    }
+
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      transition: all 0.2s ease;
+    }
+
+    .nav-links a:hover {
+      color: var(--accent-orange);
+      text-shadow: 0 0 8px rgba(255, 120, 0, 0.4);
+    }
+
+    .nav-btn {
+      padding: 8px 18px;
+      border: 1px solid var(--accent-orange);
+      border-radius: 6px;
+      background: rgba(255, 120, 0, 0.12);
+      color: var(--accent-orange) !important;
+    }
+    .nav-btn:hover {
+      background: var(--accent-orange) !important;
+      color: #000 !important;
+      box-shadow: 0 0 20px rgba(255, 120, 0, 0.6);
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 90px 0 60px;
+      text-align: center;
+      position: relative;
+    }
+
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      background: rgba(255, 120, 0, 0.1);
+      border: 1px solid rgba(255, 120, 0, 0.3);
+      border-radius: 30px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: var(--accent-amber);
+      margin-bottom: 24px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background: #10B981;
+      border-radius: 50%;
+      box-shadow: 0 0 10px #10B981;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .hero h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 64px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      line-height: 1.1;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, #FFFFFF 0%, #FFAA1E 50%, #FF7800 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-shadow: 0 0 35px rgba(255, 120, 0, 0.3);
+    }
+
+    .hero-creators {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent-orange);
+      letter-spacing: 2px;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+    }
+
+    .hero p {
+      font-size: 20px;
+      max-width: 780px;
+      margin: 0 auto 40px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .hero-actions {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 50px;
+    }
+
+    .btn-primary {
+      padding: 16px 36px;
+      background: linear-gradient(135deg, var(--accent-orange), var(--accent-crimson));
+      color: #FFF;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-decoration: none;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 6px 30px rgba(255, 120, 0, 0.4);
+      transition: all 0.3s ease;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 40px rgba(255, 120, 0, 0.7);
+      background: linear-gradient(135deg, #FFAA1E, var(--accent-orange));
+    }
+
+    .btn-secondary {
+      padding: 16px 32px;
+      background: rgba(255, 255, 255, 0.05);
+      color: #FFF;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-decoration: none;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 120, 0, 0.4);
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s ease;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 120, 0, 0.15);
+      border-color: var(--accent-orange);
+      transform: translateY(-3px);
+    }
+
+    /* Stats Banner */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+      margin: 40px 0 80px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-glow);
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      backdrop-filter: blur(15px);
+    }
+
+    .stat-num {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 36px;
+      font-weight: 900;
+      color: var(--accent-orange);
+      margin-bottom: 4px;
+    }
+
+    .stat-label {
+      font-size: 14px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* Feature Grid */
+    .section-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 36px;
+      text-align: center;
+      letter-spacing: 2px;
+      margin-bottom: 16px;
+      color: #FFF;
+    }
+    .section-subtitle {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 18px;
+      margin-bottom: 50px;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-bottom: 90px;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-glow);
+      border-radius: 14px;
+      padding: 30px;
+      backdrop-filter: blur(20px);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-6px);
+      border-color: var(--border-glow-bright);
+      background: var(--bg-card-hover);
+      box-shadow: 0 15px 40px rgba(255, 120, 0, 0.2);
+    }
+
+    .feature-icon {
+      font-size: 32px;
+      margin-bottom: 16px;
+      display: inline-block;
+    }
+
+    .feature-card h3 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 20px;
+      margin-bottom: 12px;
+      color: #FFF;
+    }
+
+    .feature-card p {
+      color: var(--text-muted);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    /* Interactive Live Sandbox */
+    .sandbox-section {
+      background: rgba(14, 7, 3, 0.9);
+      border: 1px solid var(--border-glow);
+      border-radius: 16px;
+      padding: 40px;
+      margin-bottom: 90px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+    }
+
+    .sandbox-tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid rgba(255, 120, 0, 0.2);
+      padding-bottom: 12px;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      padding: 10px 18px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn.active, .tab-btn:hover {
+      background: rgba(255, 120, 0, 0.15);
+      border-color: var(--accent-orange);
+      color: #FFF;
+    }
+
+    .terminal-window {
+      background: #000000;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #38BDF8;
+      min-height: 180px;
+    }
+
+    .term-prompt { color: var(--accent-orange); }
+    .term-success { color: #10B981; }
+
+    /* Download Box */
+    .download-section {
+      text-align: center;
+      padding: 70px 40px;
+      background: linear-gradient(180deg, rgba(25, 10, 4, 0.8) 0%, rgba(10, 4, 2, 0.95) 100%);
+      border: 2px solid var(--accent-orange);
+      border-radius: 20px;
+      margin-bottom: 80px;
+      box-shadow: 0 0 50px rgba(255, 120, 0, 0.25);
+    }
+
+    .download-section h2 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 42px;
+      margin-bottom: 16px;
+      color: #FFF;
+    }
+
+    .download-section p {
+      color: var(--text-muted);
+      font-size: 18px;
+      max-width: 650px;
+      margin: 0 auto 36px;
+    }
+
+    .code-block {
+      background: #000;
+      border: 1px solid rgba(255, 120, 0, 0.3);
+      border-radius: 8px;
+      padding: 16px 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      display: inline-block;
+      text-align: left;
+      margin-bottom: 30px;
+      color: #FFF;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid rgba(255, 120, 0, 0.15);
+      padding: 40px 0;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    footer a { color: var(--accent-orange); text-decoration: none; }
+
+    @media (max-width: 900px) {
+      .hero h1 { font-size: 42px; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <canvas id="particles-canvas"></canvas>
+
+  <header>
+    <div class="container nav-wrapper">
+      <div class="logo">
+        ULTRON <span class="logo-badge">2.0</span>
+      </div>
+      <nav class="nav-links">
+        <a href="#features">CAPABILITIES</a>
+        <a href="#matrix">HARDWARE</a>
+        <a href="#simulation">LIVE TERMINAL</a>
+        <a href="https://github.com/Yeezie08147/ultron_2.0" target="_blank">GITHUB</a>
+        <a href="#download" class="nav-btn">DOWNLOAD</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-tag">
+        <span class="pulse-dot"></span> System Status: Online & Autonomous
+      </div>
+      <h1>AUTONOMOUS INTELLIGENCE &amp; HARDWARE MATRIX</h1>
+      <div class="hero-creators">Forged by Yajat &amp; Vivaan</div>
+      <p>
+        A supremely intelligent local and cloud hybrid AI with direct PC tool synthesis, multi-protocol radio transceivers, Samsung SmartThings orchestration, and real-time voice flow.
+      </p>
+
+      <div class="hero-actions">
+        <a href="https://github.com/Yeezie08147/ultron_2.0/archive/refs/heads/main.zip" class="btn-primary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          DOWNLOAD ULTRON 2.0
+        </a>
+        <a href="https://github.com/Yeezie08147/ultron_2.0" target="_blank" class="btn-secondary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          GITHUB REPOSITORY
+        </a>
+      </div>
+
+      <!-- Quick Stats -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-num">12 GB</div>
+          <div class="stat-label">RTX 3060 VRAM Optimized</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num">Sub-GHz</div>
+          <div class="stat-label">315 / 433 / 868 / 915 MHz</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num">Dual-Tier</div>
+          <div class="stat-label">Local GPU + Kie.ai Cloud</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num">&lt;25ms</div>
+          <div class="stat-label">Fast Action Dispatch</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Capabilities Grid -->
+    <section id="features">
+      <h2 class="section-title">ENGINE MATRIX</h2>
+      <p class="section-subtitle">Architected for complete autonomous control across hardware, neural models, and operating system.</p>
+
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div>
+            <div class="feature-icon">🧠</div>
+            <h3>Dual-Brain Neural Matrix</h3>
+            <p>Runs custom compiled <code>ultron:brain</code> &amp; <code>ultron:opus</code> locally in RTX 3060 VRAM with seamless Kie.ai Claude Fable 5 cloud failover.</p>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div>
+            <div class="feature-icon">📻</div>
+            <h3>F.R.A.N.K SDR Radio Tool</h3>
+            <p>2.4 MS/s In-phase/Quadrature RF binary stream recording, 8192-point FFT spectrum analysis, and live AM/FM audio demodulator.</p>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div>
+            <div class="feature-icon">🎛️</div>
+            <h3>Multi-Protocol Hardware</h3>
+            <p>Sub-GHz Radio, High-Frequency 13.56MHz NFC, 125kHz RFID Proximity, 38kHz Infrared Remote, iButton 1-Wire, and BadUSB DuckyScript.</p>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div>
+            <div class="feature-icon">📱</div>
+            <h3>Android ADB &amp; DB Matrix</h3>
+            <p>Automated multi-device screen unlocking, YouTube media dispatch, volume management, and SQLite database forensic table exports.</p>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div>
+            <div class="feature-icon">🏠</div>
+            <h3>SmartThings &amp; Local IoT</h3>
+            <p>SSDP local auto-discovery for Samsung Smart TVs and appliances, plus SmartThings Cloud REST API multi-device scene execution.</p>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div>
+            <div class="feature-icon">🎙️</div>
+            <h3>Real-Time Voice Flow</h3>
+            <p>Continuous microphone streaming with local Whisper transcription and high-speed ElevenLabs TTS neural synthesis.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Interactive Live Terminal Simulation -->
+    <section id="simulation" class="sandbox-section">
+      <h2 class="section-title" style="text-align: left; font-size: 24px; margin-bottom: 8px;">LIVE MATRIX TELEMETRY</h2>
+      <p style="color: var(--text-muted); margin-bottom: 20px;">Simulate and inspect ULTRON's autonomous subsystem execution in real-time.</p>
+
+      <div class="sandbox-tabs">
+        <button class="tab-btn active" onclick="switchTab('subghz')">📻 SUB-GHZ RF</button>
+        <button class="tab-btn" onclick="switchTab('frank')">⚡ F.R.A.N.K RADIO</button>
+        <button class="tab-btn" onclick="switchTab('smartthings')">🏠 SMARTTHINGS</button>
+        <button class="tab-btn" onclick="switchTab('android')">📱 ANDROID ADB</button>
+        <button class="tab-btn" onclick="switchTab('brain')">🧠 DUAL BRAIN</button>
+      </div>
+
+      <div id="terminal" class="terminal-window">
+        <span class="term-prompt">[ULTRON@MATRIX ~]$</span> read sub ghz at 433.92<br>
+        <span class="term-success">[+] Sub-GHz packet decoded at 433.92 MHz: ASK_OOK_Frame (Payload: 0x7D8F, RSSI: -48.8 dBm, SNR: 27.7 dB), sir.</span><br>
+        <span class="term-prompt">[ULTRON@MATRIX ~]$</span> _
+      </div>
+    </section>
+
+    <!-- Download Section -->
+    <section id="download" class="download-section">
+      <h2>DEPLOY ULTRON 2.0</h2>
+      <p>Clone the repository or download the release package to run ULTRON on your local machine.</p>
+
+      <div class="code-block">
+        <span style="color: #FF7800;">git clone</span> https://github.com/Yeezie08147/ultron_2.0.git<br>
+        <span style="color: #FF7800;">cd</span> ultron_2.0<br>
+        <span style="color: #10B981;">.\launch-jarvis-desktop.bat</span>
+      </div>
+
+      <div style="display: flex; justify-content: center; gap: 16px;">
+        <a href="https://github.com/Yeezie08147/ultron_2.0/archive/refs/heads/main.zip" class="btn-primary">
+          DOWNLOAD ZIP ARCHIVE
+        </a>
+        <a href="https://github.com/Yeezie08147/ultron_2.0" target="_blank" class="btn-secondary">
+          VIEW SOURCE ON GITHUB
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>ULTRON 2.0 — Autonomous Intelligence Suite. Forged by <strong>Yajat &amp; Vivaan</strong>.</p>
+      <p style="margin-top: 8px; color: #666;">Open Source Release • Target Repository: <a href="https://github.com/Yeezie08147/ultron_2.0" target="_blank">Yeezie08147/ultron_2.0</a></p>
+    </div>
+  </footer>
+
+  <script>
+    // Particle Constellation Background
+    const canvas = document.getElementById('particles-canvas');
+    const ctx = canvas.getContext('2d');
+    let width, height, particles = [];
+
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    for (let i = 0; i < 65; i++) {
+      particles.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        vx: (Math.random() - 0.5) * 0.6,
+        vy: (Math.random() - 0.5) * 0.6,
+        r: Math.random() * 2 + 1
+      });
+    }
+
+    function animate() {
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = '#FF7800';
+      ctx.strokeStyle = 'rgba(255, 120, 0, 0.08)';
+
+      for (let i = 0; i < particles.length; i++) {
+        let p = particles[i];
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < 0 || p.x > width) p.vx *= -1;
+        if (p.y < 0 || p.y > height) p.vy *= -1;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+
+        for (let j = i + 1; j < particles.length; j++) {
+          let p2 = particles[j];
+          let dist = Math.hypot(p.x - p2.x, p.y - p2.y);
+          if (dist < 130) {
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+          }
+        }
+      }
+      requestAnimationFrame(animate);
+    }
+    animate();
+
+    // Terminal Simulator
+    const terminalLogs = {
+      subghz: '<span class="term-prompt">[ULTRON@MATRIX ~]$</span> read sub ghz at 433.92<br><span class="term-success">[+] Sub-GHz packet decoded at 433.92 MHz: ASK_OOK_Frame (Payload: 0x7D8F, RSSI: -48.8 dBm, SNR: 27.7 dB), sir.</span><br><span class="term-prompt">[ULTRON@MATRIX ~]$</span> _',
+      frank: '<span class="term-prompt">[ULTRON@MATRIX ~]$</span> run frank radio tool --freq 100MHz<br>[*] Recording 2.4 MS/s IQ binary stream to iq_data.bin...<br>[+] Loaded 24,000,000 complex samples. FFT Peak: 50,097.66 Hz.<br><span class="term-success">[+] AM Demodulation complete: Decoded audio exported to decoded_audio.wav, sir.</span><br><span class="term-prompt">[ULTRON@MATRIX ~]$</span> _',
+      smartthings: '<span class="term-prompt">[ULTRON@MATRIX ~]$</span> activate movie mode<br>[*] SSDP Multicast: Discovering local Samsung Smart TVs...<br>[+] Samsung CU8000 43 Smart TV: Powered ON (Preset: Cinema, Vol: 20)<br><span class="term-success">[+] SmartThings Matrix: Dimmed lights to 15% across all zones, sir.</span><br><span class="term-prompt">[ULTRON@MATRIX ~]$</span> _',
+      android: '<span class="term-prompt">[ULTRON@MATRIX ~]$</span> unlock phone<br>[*] ADB Handshake: Found 1 authorized device(s)<br>[+] Sent Keyevent 26 (WAKE) + Input Swipe + PIN Entry<br><span class="term-success">[+] Unlocked 1 of 1 connected devices, sir.</span><br><span class="term-prompt">[ULTRON@MATRIX ~]$</span> _',
+      brain: '<span class="term-prompt">[ULTRON@MATRIX ~]$</span> check brain matrix status<br>[*] Primary Brain: ultron:brain (Llama 3.1 8B Q4_K_M on RTX 3060 12GB VRAM)<br>[*] Reasoning Tier: ultron:opus (DeepSeek-R1 7B CoT)<br><span class="term-success">[+] Frontier Cloud Gateway: Kie.ai Claude Fable 5 Online, sir.</span><br><span class="term-prompt">[ULTRON@MATRIX ~]$</span> _'
+    };
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('terminal').innerHTML = terminalLogs[tab];
+    }
+  </script>
+</body>
+</html>

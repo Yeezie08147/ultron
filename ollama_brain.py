@@ -24,14 +24,14 @@ class _Response:
     stop_reason: str = "end_turn"
 
 class _Messages:
-    def __init__(self, model="llama3.1"):
+    def __init__(self, model="ultron:brain"):
         self.model = model
     
     async def create(self, **kwargs) -> _Response:
         return _Response(content=[_Block(text="Not implemented")])
 
 class OllamaBrain:
-    def __init__(self, model: str = "llama3.1"):
+    def __init__(self, model: str = "ultron:brain"):
         self.messages = _Messages(model=model)
         self._model = model
 
@@ -79,7 +79,7 @@ Otherwise, just respond normally without tags.
                     "POST",
                     "http://127.0.0.1:11434/api/chat",
                     json={
-                        "model": "llama3.1",
+                        "model": self._model,
                         "messages": ollama_msgs,
                         "stream": True
                     },

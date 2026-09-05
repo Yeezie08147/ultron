@@ -1,8 +1,8 @@
 """
 device_control.py — ULTRON Multi-Device Control via ADB.
 
-Controls Android devices connected via USB:
-  - Discover connected devices
+Controls Android devices connected via USB / Wi-Fi:
+  - Discover connected devices with status diagnostics (online, unauthorized, offline)
   - Unlock screens (wake + swipe + PIN)
   - Play media (YouTube search)
   - Pause/stop media
@@ -13,9 +13,9 @@ import asyncio
 import subprocess
 import logging
 import os
-from typing import Optional
+from typing import Optional, Dict, List, Tuple
 
-log = logging.getLogger("jarvis.devices")
+log = logging.getLogger("ultron.devices")
 
 # Device PINs from .env (DEVICE_PIN_1, DEVICE_PIN_2, etc.)
 # Or a single default PIN: DEVICE_PIN
@@ -47,16 +47,34 @@ def _adb(*args, serial: str = "") -> str:
         log.error(f"ADB error: {e}")
         return ""
 
-def discover_devices() -> list[str]:
-    """Return list of connected device serial numbers."""
+def get_detailed_device_status() -> Tuple[List[str], List[Dict[str, str]]]:
+    """Return active devices and a list of all detected devices with status."""
     output = _adb("devices")
-    devices = []
+    
+    # If no output or empty, try restarting ADB server
+    if not output or len(output.splitlines()) <= 1:
+        _adb("kill-server")
+        output = _adb("devices")
+
+    active_serials = []
+    all_devices = []
+    
     for line in output.splitlines()[1:]:  # skip header
         parts = line.split()
-        if len(parts) >= 2 and parts[1] == "device":
-            devices.append(parts[0])
-    log.info(f"Found {len(devices)} connected device(s): {devices}")
-    return devices
+        if len(parts) >= 2:
+            serial = parts[0]
+            status = parts[1]
+            all_devices.append({"serial": serial, "status": status})
+            if status == "device":
+                active_serials.append(serial)
+                
+    log.info(f"ADB Status: {len(active_serials)} active, {len(all_devices)} total: {all_devices}")
+    return active_serials, all_devices
+
+def discover_devices() -> list[str]:
+    """Return list of authorized connected device serial numbers."""
+    active, _ = get_detailed_device_status()
+    return active
 
 def _is_screen_on(serial: str) -> bool:
     """Check if device screen is on."""
@@ -84,10 +102,29 @@ def unlock_device(serial: str, pin: str = "") -> bool:
         return False
 
 async def unlock_all() -> dict:
-    """Unlock all connected devices simultaneously."""
-    devices = discover_devices()
-    if not devices:
-        return {"success": False, "count": 0, "message": "No devices connected."}
+    """Unlock all connected devices simultaneously with detailed error diagnostics."""
+    active_devices, all_devices = get_detailed_device_status()
+    
+    if not all_devices:
+        return {
+            "success": False,
+            "count": 0,
+            "message": "No Android device detected over USB. Ensure USB Debugging is turned ON in Developer Options and the phone is plugged in, sir."
+        }
+    
+    if not active_devices:
+        unauthorized = [d["serial"] for d in all_devices if d["status"] == "unauthorized"]
+        if unauthorized:
+            return {
+                "success": False,
+                "count": 0,
+                "message": "Device connected but unauthorized. Please tap 'Allow USB Debugging' on your phone screen, sir."
+            }
+        return {
+            "success": False,
+            "count": 0,
+            "message": f"Device detected with status: {all_devices[0]['status']}. Please check USB connection, sir."
+        }
     
     pins = _get_pins()
     
@@ -95,13 +132,13 @@ async def unlock_all() -> dict:
         pin = pins[i] if i < len(pins) else ""
         return await asyncio.to_thread(unlock_device, serial, pin)
     
-    results = await asyncio.gather(*[_unlock(i, s) for i, s in enumerate(devices)])
+    results = await asyncio.gather(*[_unlock(i, s) for i, s in enumerate(active_devices)])
     success_count = sum(1 for r in results if r)
     return {
         "success": success_count > 0,
         "count": success_count,
-        "total": len(devices),
-        "message": f"Unlocked {success_count} of {len(devices)} devices."
+        "total": len(active_devices),
+        "message": f"Unlocked {success_count} of {len(active_devices)} devices, sir."
     }
 
 def play_media_on_device(serial: str, query: str) -> bool:
@@ -123,7 +160,7 @@ async def play_on_all(query: str) -> dict:
     """Play media on all connected devices simultaneously."""
     devices = discover_devices()
     if not devices:
-        return {"success": False, "count": 0, "message": "No devices connected."}
+        return {"success": False, "count": 0, "message": "No authorized devices connected, sir."}
     
     results = await asyncio.gather(*[
         asyncio.to_thread(play_media_on_device, s, query) for s in devices
@@ -133,7 +170,7 @@ async def play_on_all(query: str) -> dict:
         "success": success_count > 0,
         "count": success_count,
         "total": len(devices),
-        "message": f"Playing on {success_count} of {len(devices)} devices."
+        "message": f"Playing on {success_count} of {len(devices)} devices, sir."
     }
 
 def pause_device(serial: str) -> bool:
@@ -149,7 +186,7 @@ async def pause_all() -> dict:
     """Pause media on all connected devices."""
     devices = discover_devices()
     if not devices:
-        return {"success": False, "count": 0, "message": "No devices connected."}
+        return {"success": False, "count": 0, "message": "No authorized devices connected, sir."}
     
     results = await asyncio.gather(*[
         asyncio.to_thread(pause_device, s) for s in devices
@@ -158,7 +195,7 @@ async def pause_all() -> dict:
     return {
         "success": success_count > 0,
         "count": success_count,
-        "message": f"Paused {success_count} of {len(devices)} devices."
+        "message": f"Paused {success_count} of {len(devices)} devices, sir."
     }
 
 def set_volume(serial: str, level: int) -> bool:
@@ -174,7 +211,7 @@ async def volume_all(level: int) -> dict:
     """Set volume on all devices."""
     devices = discover_devices()
     if not devices:
-        return {"success": False, "count": 0, "message": "No devices connected."}
+        return {"success": False, "count": 0, "message": "No devices connected, sir."}
     
     results = await asyncio.gather(*[
         asyncio.to_thread(set_volume, s, level) for s in devices

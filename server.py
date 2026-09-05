@@ -105,6 +105,16 @@ import display_controller
 import windows_agent_bridge
 import whisper_flow
 import frequency_inverter
+import connection_flipper
+import ultron_model_forge
+import frontier_matrix
+import sub_ghz
+import hardware_matrix
+import frank_radio
+import android_db_tool
+import device_control
+import binary_preservation
+import smartthings_matrix
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 log = logging.getLogger("ultron")
@@ -1267,7 +1277,7 @@ async def generate_response(
             resp = await c.post(
                 "http://127.0.0.1:11434/api/chat",
                 json={
-                    "model": "llama3.1",
+                    "model": "ultron:brain",
                     "messages": ollama_msgs,
                     "stream": False
                 },
@@ -1804,6 +1814,14 @@ def detect_action_fast(text: str) -> dict | None:
         target_elem = re.sub(r'\s+button$', '', target_elem).strip()
         return {"action": "click_ui", "target": target_elem}
 
+    # Connection & Table Flipper Matrix
+    if any(p in t for p in ["flip the connection and flip the table", "flip connection and tables", "flip the connection and the tables", "flip connection and flip table"]):
+        return {"action": "flip_connection_and_table", "target": text}
+    if any(p in t for p in ["flip the connection", "flip connection", "cycle connection", "reset network connection"]):
+        return {"action": "flip_connection"}
+    if any(p in t for p in ["flip the table around", "flip the tables around", "turn the tables around", "turn tables around", "flip table around"]):
+        return {"action": "flip_table_around", "text": text}
+
     # Frequency Reversal, RDC & Table Flip Matrix
     if any(p in t for p in ["go back a frequency through rdc", "flip the tables through rdc", "rdc frequency flip"]):
         return {"action": "rdc_frequency_protocol", "target": text}
@@ -1815,6 +1833,94 @@ def detect_action_fast(text: str) -> dict | None:
         host_m = re.sub(r'^.*(?:to|host|ip)\s+', '', t).strip()
         host_m = "" if host_m in t else host_m
         return {"action": "launch_rdc", "host": host_m}
+
+    # Frontier Matrix & Opus Super-Brain
+    if any(p in t for p in ["compile opus brain", "compile frontier brain", "upgrade to opus", "switch to opus brain", "compile ultron opus", "activate opus brain"]):
+        return {"action": "compile_opus_brain"}
+    if any(p in t for p in ["brain matrix status", "model status", "check models", "active brain tier", "check local models"]):
+        return {"action": "brain_matrix_status"}
+    if any(p in t for p in ["generate training dataset", "create training dataset", "generate dataset for model", "train dataset", "generate ultron dataset"]):
+        return {"action": "generate_dataset", "target": text}
+    if any(p in t for p in ["compile custom model", "create custom ollama model", "build custom model", "train custom llm", "make custom llm", "build custom llm"]):
+        return {"action": "compile_custom_model", "target": text}
+    if any(p in t for p in ["export training script", "export gpu training script", "export fine tuning pipeline", "export model training script"]):
+        return {"action": "export_training_pipeline"}
+
+    # F.R.A.N.K — Radio Signal Tool Matrix
+    if any(p in t for p in ["frank pipeline", "record and playback", "record and decode radio", "frank radio tool", "frank radio", "run frank"]):
+        f_match = re.search(r'\b(\d{2,3}(?:\.\d+)?)\s*mhz\b', t)
+        freq = int(float(f_match.group(1)) * 1000000) if f_match else 100000000
+        return {"action": "frank_pipeline", "frequency": freq}
+    if any(p in t for p in ["record raw radio", "record radio signal", "record radio"]):
+        f_match = re.search(r'\b(\d{2,3}(?:\.\d+)?)\s*mhz\b', t)
+        freq = int(float(f_match.group(1)) * 1000000) if f_match else 100000000
+        return {"action": "frank_record", "frequency": freq}
+    # Android Multi-Device Control (ADB)
+    if any(p in t for p in ["unlock phone", "unlock my phone", "unlock the phone", "unlock device", "unlock devices", "unlock all devices", "unlock android"]):
+        return {"action": "device_unlock_all"}
+    if any(p in t for p in ["pause phone", "pause music on phone", "stop phone media"]):
+        return {"action": "device_pause_all"}
+    if t.startswith("play on phone ") or t.startswith("play on my phone "):
+        q = re.sub(r'^(?:play on phone|play on my phone)\s+', '', t).strip()
+        return {"action": "device_play_all", "query": q}
+
+    # Android SQLite Database Forensic Matrix
+    if any(p in t for p in ["extract android database", "pull android database", "extract locksettings", "pull locksettings", "export android db"]):
+        return {"action": "android_db_extract"}
+    if any(p in t for p in ["export sqlite to csv", "export database to csv", "export sqlite tables"]):
+        return {"action": "android_db_export_csv"}
+    # Binary Format & Software Preservation Matrix
+    if t.startswith("preserve binary ") or t.startswith("analyze binary ") or t.startswith("inspect binary "):
+        target_b = re.sub(r'^(?:preserve binary|analyze binary|inspect binary)\s+', '', t).strip()
+        return {"action": "preserve_binary", "target": target_b}
+    # Samsung SmartThings & Multi-Device IoT Matrix
+    if any(p in t for p in ["smartthings devices", "list smart devices", "smart things devices", "scan smart devices", "list smartthings", "discover smart devices"]):
+        return {"action": "smartthings_list"}
+    if any(p in t for p in ["turn on all lights", "all lights on"]):
+        return {"action": "smartthings_lights", "state": "on"}
+    if any(p in t for p in ["turn off all lights", "all lights off"]):
+        return {"action": "smartthings_lights", "state": "off"}
+    if any(p in t for p in ["turn on all plugs", "all plugs on"]):
+        return {"action": "smartthings_plugs", "state": "on"}
+    if any(p in t for p in ["turn off all plugs", "all plugs off"]):
+        return {"action": "smartthings_plugs", "state": "off"}
+    if any(p in t for p in ["movie mode", "cinema mode", "good night", "night mode", "all off", "party mode", "deep focus mode"]):
+        return {"action": "smartthings_scene", "scene": text}
+    if any(p in t for p in ["turn on tv", "turn on the tv", "power on tv"]):
+        return {"action": "smartthings_tv", "cmd": "on"}
+    if any(p in t for p in ["turn off tv", "turn off the tv", "power off tv"]):
+        return {"action": "smartthings_tv", "cmd": "off"}
+    if any(p in t for p in ["mute tv", "mute the tv", "unmute tv"]):
+        return {"action": "smartthings_tv", "cmd": "mute"}
+
+    # Full Hardware Matrix (Sub-GHz, NFC, RFID, IR, iButton, BadUSB)
+    if any(p in t for p in ["read nfc", "scan nfc", "read nfc card", "scan nfc tag", "emulate nfc"]):
+        return {"action": "hardware_nfc_read"}
+    if any(p in t for p in ["read rfid", "scan rfid", "read 125khz", "scan 125khz rfid", "read prox card", "scan rfid tag"]):
+        return {"action": "hardware_rfid_read"}
+    if any(p in t for p in ["read ir", "read infrared", "decode ir", "capture ir", "listen ir"]):
+        return {"action": "hardware_ir_read"}
+    if any(p in t for p in ["send ir", "transmit ir", "tv power", "mute tv", "turn on tv", "turn off tv"]):
+        btn = "power" if "power" in t or "turn on" in t or "turn off" in t else ("mute" if "mute" in t else "vol_up")
+        return {"action": "hardware_ir_send", "device": "tv", "button": btn}
+    if any(p in t for p in ["read ibutton", "scan ibutton", "read dallas key", "read 1-wire", "scan 1-wire"]):
+        return {"action": "hardware_ibutton_read"}
+    if any(p in t for p in ["run ducky script", "run badusb", "inject keystrokes", "execute ducky", "badusb payload"]):
+        return {"action": "hardware_badusb_run"}
+
+    # Sub-GHz RF & Spectrum Matrix (100% PC Native)
+    if any(p in t for p in ["read raw sub ghz", "read raw sub-ghz", "capture raw sub ghz", "capture raw rf", "read raw rf"]):
+        f_match = re.search(r'\b(315|433|868|915|\d{3}(?:\.\d+)?)\b', t)
+        freq = float(f_match.group(1)) if f_match else 433.92
+        return {"action": "sub_ghz_read_raw", "frequency": freq}
+    if any(p in t for p in ["read sub ghz", "read sub-ghz", "read subghz", "listen sub ghz", "decode sub ghz", "capture sub ghz"]):
+        f_match = re.search(r'\b(315|433|868|915|\d{3}(?:\.\d+)?)\b', t)
+        freq = float(f_match.group(1)) if f_match else 433.92
+        return {"action": "sub_ghz_read", "frequency": freq}
+    if any(p in t for p in ["scan rf spectrum", "scan radio spectrum", "scan rf band", "sweep rf spectrum", "spectrum sweep"]):
+        b_match = re.search(r'\b(315|433|868|915)\b', t)
+        band = b_match.group(1) if b_match else "433"
+        return {"action": "sub_ghz_scan", "band": band}
 
     # Screenshot capture
     if any(p in t for p in ["take a screenshot", "capture screen", "screenshot my screen", "take screenshot"]):
@@ -2864,6 +2970,15 @@ async def voice_handler(ws: WebSocket):
                         elif action["action"] == "click_ui":
                             res = windows_agent_bridge.click_element_by_name(action.get("target", ""))
                             response_text = res.get("message", "Targeted UI element.")
+                        elif action["action"] == "flip_connection_and_table":
+                            res = connection_flipper.flip_connection_and_table(action.get("target", ""))
+                            response_text = res.get("message", "Connection flipped and tables turned around.")
+                        elif action["action"] == "flip_connection":
+                            res = connection_flipper.flip_connection()
+                            response_text = res.get("message", "Connection flipped.")
+                        elif action["action"] == "flip_table_around":
+                            res = connection_flipper.flip_the_table(action.get("text", ""))
+                            response_text = res.get("message", "Tables flipped.")
                         elif action["action"] == "rdc_frequency_protocol":
                             res = frequency_inverter.execute_rdc_frequency_protocol(action.get("target", ""))
                             response_text = res.get("message", "Frequency inverted through RDC matrix.")
@@ -2876,6 +2991,90 @@ async def voice_handler(ws: WebSocket):
                         elif action["action"] == "launch_rdc":
                             res = frequency_inverter.launch_rdc(action.get("host", ""))
                             response_text = res.get("message", "Remote Desktop launched.")
+                        elif action["action"] == "generate_dataset":
+                            res = ultron_model_forge.generate_training_dataset(action.get("target", ""))
+                            response_text = res.get("message", "Dataset generated.")
+                        elif action["action"] == "compile_custom_model":
+                            res = ultron_model_forge.compile_custom_ollama_model()
+                            response_text = res.get("message", "Custom model compiled.")
+                        elif action["action"] == "compile_opus_brain":
+                            res = frontier_matrix.compile_ultron_opus_brain()
+                            response_text = res.get("message", "Frontier Opus brain compiled.")
+                        elif action["action"] == "brain_matrix_status":
+                            res = frontier_matrix.get_brain_matrix_status()
+                            response_text = res.get("message", "Brain matrix operational.")
+                        elif action["action"] == "export_training_pipeline":
+                            res = ultron_model_forge.export_gpu_training_script()
+                            response_text = res.get("message", "Training pipeline exported.")
+                        elif action["action"] == "sub_ghz_read":
+                            res = sub_ghz.read(action.get("frequency", 433.92))
+                            response_text = res.get("message", "Sub-GHz packet read.")
+                        elif action["action"] == "sub_ghz_read_raw":
+                            res = sub_ghz.read_raw(action.get("frequency", 433.92))
+                            response_text = res.get("message", "Raw Sub-GHz waveform captured.")
+                        elif action["action"] == "sub_ghz_scan":
+                            res = sub_ghz.scan_spectrum(action.get("band", "433"))
+                            response_text = res.get("message", "Spectrum scan complete.")
+                        elif action["action"] == "hardware_nfc_read":
+                            res = hardware_matrix.nfc_read(action.get("type", "auto"))
+                            response_text = res.get("message", "NFC tag read.")
+                        elif action["action"] == "hardware_rfid_read":
+                            res = hardware_matrix.rfid_125khz_read(action.get("type", "EM4100"))
+                            response_text = res.get("message", "RFID proximity tag read.")
+                        elif action["action"] == "hardware_ir_read":
+                            res = hardware_matrix.ir_read()
+                            response_text = res.get("message", "Infrared signal decoded.")
+                        elif action["action"] == "hardware_ir_send":
+                            res = hardware_matrix.ir_send_command(action.get("device", "tv"), action.get("button", "power"))
+                            response_text = res.get("message", "Infrared signal transmitted.")
+                        elif action["action"] == "hardware_ibutton_read":
+                            res = hardware_matrix.ibutton_read()
+                            response_text = res.get("message", "iButton key decoded.")
+                        elif action["action"] == "hardware_badusb_run":
+                            res = hardware_matrix.run_ducky_script(action.get("script", ""))
+                            response_text = res.get("message", "BadUSB payload executed.")
+                        elif action["action"] == "frank_pipeline":
+                            res = frank_radio.full_pipeline(frequency=action.get("frequency", 100000000))
+                            response_text = res.get("message", "F.R.A.N.K radio pipeline complete.")
+                        elif action["action"] == "frank_record":
+                            res = frank_radio.record_raw_signal(frequency=action.get("frequency", 100000000))
+                            response_text = res.get("message", "Radio signal recorded.")
+                        elif action["action"] == "frank_decode":
+                            res = frank_radio.decode_and_playback()
+                            response_text = res.get("message", "Radio signal decoded and played.")
+                        elif action["action"] == "android_db_extract":
+                            res = android_db_tool.extract_android_database()
+                            response_text = res.get("message", "Android database extracted.")
+                        elif action["action"] == "android_db_export_csv":
+                            res = android_db_tool.export_sqlite_to_csv(action.get("path", ""))
+                            response_text = res.get("message", "SQLite tables exported to CSV.")
+                        elif action["action"] == "device_unlock_all":
+                            res = await device_control.unlock_all()
+                            response_text = res.get("message", "Devices unlocked.")
+                        elif action["action"] == "device_pause_all":
+                            res = await device_control.pause_all()
+                            response_text = res.get("message", "Devices paused.")
+                        elif action["action"] == "device_play_all":
+                            res = await device_control.play_on_all(action.get("query", "lofi"))
+                            response_text = res.get("message", "Playing media on devices.")
+                        elif action["action"] == "preserve_binary":
+                            res = binary_preservation.analyze_and_preserve_binary(action.get("target", ""))
+                            response_text = res.get("message", "Binary preservation analysis complete.")
+                        elif action["action"] == "smartthings_list":
+                            res = await smartthings_matrix.list_devices()
+                            response_text = res.get("message", "SmartThings devices listed.")
+                        elif action["action"] == "smartthings_lights":
+                            res = await smartthings_matrix.control_all_lights(action.get("state", "on"))
+                            response_text = res.get("message", "Lights updated.")
+                        elif action["action"] == "smartthings_plugs":
+                            res = await smartthings_matrix.control_all_plugs(action.get("state", "on"))
+                            response_text = res.get("message", "Smart plugs updated.")
+                        elif action["action"] == "smartthings_scene":
+                            res = await smartthings_matrix.execute_smart_scene(action.get("scene", "movie"))
+                            response_text = res.get("message", "Scene executed.")
+                        elif action["action"] == "smartthings_tv":
+                            res = await smartthings_matrix.control_device("Samsung TV", action.get("cmd", "on"))
+                            response_text = res.get("message", "TV command sent.")
                         elif action["action"] == "cyber_sweep":
                             try:
                                 from cyber_defense import scan_network, scan_processes
@@ -3281,6 +3480,21 @@ if FRONTEND_DIST.exists():
             html_content = f.read()
         from starlette.responses import HTMLResponse
         return HTMLResponse(html_content, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+    @app.get("/landing")
+    async def serve_landing():
+        landing_file = Path(__file__).parent / "landing_page" / "index.html"
+        if landing_file.exists():
+            with open(landing_file, "r", encoding="utf-8") as f:
+                html_content = f.read()
+            from starlette.responses import HTMLResponse
+            return HTMLResponse(html_content)
+        return FileResponse(FRONTEND_DIST / "index.html")
+
+    @app.get("/download")
+    async def serve_download():
+        from starlette.responses import RedirectResponse
+        return RedirectResponse("https://github.com/Yeezie08147/ultron_2.0/archive/refs/heads/main.zip")
 
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 

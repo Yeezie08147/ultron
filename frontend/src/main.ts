@@ -122,7 +122,13 @@ socket.onMessage((msg) => {
       transition("idle");
     }
     // Log text for debugging
-    if (msg.text) console.log("[JARVIS]", msg.text);
+    const txt = String(msg.text || "");
+    if (txt) {
+      console.log("[ULTRON]", txt);
+      if (subGhzLogConsole && (txt.includes("Sub-GHz") || txt.includes("RF") || txt.includes("NFC") || txt.includes("RFID") || txt.includes("Infrared") || txt.includes("iButton") || txt.includes("MHz") || txt.includes("BadUSB"))) {
+        subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] ${txt}`;
+      }
+    }
   } else if (type === "status") {
     const state = msg.state as string;
     if (state === "thinking" && currentState !== "thinking") {
@@ -136,7 +142,11 @@ socket.onMessage((msg) => {
     }
   } else if (type === "text") {
     // Text fallback when TTS fails
-    console.log("[JARVIS]", msg.text);
+    const txt = String(msg.text || "");
+    console.log("[ULTRON]", txt);
+    if (subGhzLogConsole && txt && (txt.includes("Sub-GHz") || txt.includes("RF") || txt.includes("NFC") || txt.includes("RFID") || txt.includes("Infrared") || txt.includes("iButton") || txt.includes("MHz") || txt.includes("BadUSB"))) {
+      subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] ${txt}`;
+    }
   } else if (type === "task_spawned") {
     console.log("[task]", "spawned:", msg.task_id, msg.prompt);
   } else if (type === "task_complete") {
@@ -178,6 +188,69 @@ const menuDropdown = document.getElementById("menu-dropdown");
 const btnRestart = document.getElementById("btn-restart");
 const btnFixSelf = document.getElementById("btn-fix-self");
 
+// Sub-GHz Controls
+const btnSubGhz = document.getElementById("btn-subghz");
+const subGhzModal = document.getElementById("subghz-modal");
+const btnSubGhzClose = document.getElementById("btn-subghz-close");
+const subGhzFreqSelect = document.getElementById("subghz-freq") as HTMLSelectElement | null;
+const btnSubGhzRead = document.getElementById("btn-subghz-read");
+const btnSubGhzRaw = document.getElementById("btn-subghz-raw");
+const btnNfcRead = document.getElementById("btn-nfc-read");
+const btnRfidRead = document.getElementById("btn-rfid-read");
+const btnIrRead = document.getElementById("btn-ir-read");
+const btnIbuttonRead = document.getElementById("btn-ibutton-read");
+const subGhzLogConsole = document.getElementById("subghz-log-console");
+
+btnSubGhz?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (subGhzModal) {
+    subGhzModal.style.display = subGhzModal.style.display === "none" ? "block" : "none";
+  }
+});
+
+btnSubGhzClose?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (subGhzModal) subGhzModal.style.display = "none";
+});
+
+btnSubGhzRead?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const freq = subGhzFreqSelect ? subGhzFreqSelect.value : "433.92";
+  if (subGhzLogConsole) subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] Listening for digital Sub-GHz RF packet at ${freq} MHz...`;
+  socket.send({ type: "chat", text: `read sub ghz at ${freq}` });
+});
+
+btnSubGhzRaw?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const freq = subGhzFreqSelect ? subGhzFreqSelect.value : "433.92";
+  if (subGhzLogConsole) subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] Recording raw IQ waveform stream at ${freq} MHz...`;
+  socket.send({ type: "chat", text: `read raw sub ghz at ${freq}` });
+});
+
+btnNfcRead?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (subGhzLogConsole) subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] Scanning High-Frequency (13.56 MHz) NFC Tag...`;
+  socket.send({ type: "chat", text: "read nfc" });
+});
+
+btnRfidRead?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (subGhzLogConsole) subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] Reading 125 kHz RFID Proximity Tag...`;
+  socket.send({ type: "chat", text: "read rfid" });
+});
+
+btnIrRead?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (subGhzLogConsole) subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] Demodulating 38 kHz Infrared signal...`;
+  socket.send({ type: "chat", text: "read ir" });
+});
+
+btnIbuttonRead?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (subGhzLogConsole) subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] Reading 1-Wire Dallas DS1990A key...`;
+  socket.send({ type: "chat", text: "read ibutton" });
+});
+
 btnMute.addEventListener("click", (e) => {
   e.stopPropagation();
   isMuted = !isMuted;
@@ -196,8 +269,9 @@ btnMenu?.addEventListener("click", (e) => {
   if (menuDropdown) menuDropdown.style.display = menuDropdown.style.display === "none" ? "block" : "none";
 });
 
-document.addEventListener("click", () => {
-  if (menuDropdown) menuDropdown.style.display = "none";
+document.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement;
+  if (menuDropdown && !target.closest("#btn-menu")) menuDropdown.style.display = "none";
 });
 
 btnRestart?.addEventListener("click", async (e) => {

@@ -656,3 +656,198 @@ body[data-hud="interrupted"]  { --accent-rgb: 200, 30, 30; }   /* crimson       
   box-shadow: 0 0 25px rgba(var(--accent-rgb), 0.5);
   background: rgba(20, 5, 0, 0.9);
 }
+
+/* -------------------------------------------------------------------------
+   Sub-GHz Radio Matrix Modal & Console
+   ------------------------------------------------------------------------- */
+#subghz-modal {
+  position: fixed;
+  top: 75px;
+  right: 20px;
+  width: 360px;
+  background: rgba(14, 8, 5, 0.85);
+  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  border-radius: 14px;
+  padding: 16px;
+  z-index: 10001;
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(var(--accent-rgb), 0.2);
+  color: #fff;
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  animation: slide-in-down 0.25s ease-out;
+  -webkit-app-region: no-drag;
+}
+
+.subghz-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(var(--accent-rgb), 0.2);
+}
+
+.subghz-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: rgba(var(--accent-rgb), 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.subghz-dot {
+  color: #10b981;
+  animation: pulse-dot 1.5s infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+#btn-subghz-close {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+#btn-subghz-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.subghz-controls-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.subghz-controls-row label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.5px;
+}
+
+#subghz-freq {
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  border-radius: 8px;
+  color: #fff;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+
+.subghz-btn-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.subghz-act-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 8px;
+  background: rgba(var(--accent-rgb), 0.15);
+  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.subghz-act-btn:hover {
+  background: rgba(var(--accent-rgb), 0.3);
+  border-color: rgba(var(--accent-rgb), 0.8);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.3);
+}
+
+.subghz-act-btn.raw-btn {
+  background: rgba(234, 179, 8, 0.15);
+  border-color: rgba(234, 179, 8, 0.4);
+  color: #fef08a;
+}
+.subghz-act-btn.raw-btn:hover {
+  background: rgba(234, 179, 8, 0.3);
+  border-color: rgba(234, 179, 8, 0.8);
+  box-shadow: 0 0 12px rgba(234, 179, 8, 0.3);
+}
+
+.subghz-act-btn.nfc-btn {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: rgba(6, 182, 212, 0.4);
+  color: #67e8f9;
+}
+.subghz-act-btn.nfc-btn:hover {
+  background: rgba(6, 182, 212, 0.3);
+  border-color: rgba(6, 182, 212, 0.8);
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.3);
+}
+
+.subghz-act-btn.rfid-btn {
+  background: rgba(168, 85, 247, 0.15);
+  border-color: rgba(168, 85, 247, 0.4);
+  color: #d8b4fe;
+}
+.subghz-act-btn.rfid-btn:hover {
+  background: rgba(168, 85, 247, 0.3);
+  border-color: rgba(168, 85, 247, 0.8);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.3);
+}
+
+.subghz-act-btn.ir-btn {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+.subghz-act-btn.ir-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.8);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+}
+
+.subghz-act-btn.ibutton-btn {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+}
+.subghz-act-btn.ibutton-btn:hover {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.8);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.3);
+}
+
+.subghz-log-header {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+
+#subghz-log-console {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 11px;
+  color: #38bdf8;
+  line-height: 1.4;
+  min-height: 70px;
+  max-height: 120px;
+  overflow-y: auto;
+  word-break: break-word;
+}
+
