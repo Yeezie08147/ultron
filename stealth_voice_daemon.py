@@ -89,21 +89,37 @@ async def _speak_response(text: str):
             log.warning(f"SAPI TTS fallback note: {e}")
 
 
+def get_time_greeting() -> str:
+    """Generate dynamic time-of-day greeting."""
+    hr = time.localtime().tm_hour
+    if 4 <= hr < 12:
+        return "Good morning, sir."
+    elif 12 <= hr < 17:
+        return "Good afternoon, sir."
+    else:
+        return "Good evening, sir."
+
+
 def execute_voice_command(phrase: str):
     """Process voice command through ULTRON's fast action matrix, desktop agent, and brains."""
     clean = phrase.strip().lower()
     
-    # 1. Check for HUD visibility commands
-    if any(p in clean for p in ["show hud", "show window", "open hud", "wake up", "restore window", "reveal window"]):
+    # 1. Check for "Show yourself" & HUD visibility commands
+    if any(p in clean for p in [
+        "show yourself", "reveal yourself", "show hud", "show window",
+        "open hud", "wake up", "restore window", "reveal window",
+        "appear", "come online", "turn on app", "open app ultron", "where are you"
+    ]):
         if _toggle_hud_callback:
             _toggle_hud_callback(True)
-        asyncio.run(_speak_response("Visual interface restored, sir."))
+        greeting = get_time_greeting()
+        asyncio.run(_speak_response(f"{greeting} Systems fully online and responding. I am here and at your command."))
         return
 
-    if any(p in clean for p in ["hide hud", "hide window", "stealth mode", "ghost mode", "minimize to tray", "hide yourself"]):
+    if any(p in clean for p in ["hide hud", "hide window", "stealth mode", "ghost mode", "minimize to tray", "hide yourself", "go away"]):
         if _toggle_hud_callback:
             _toggle_hud_callback(False)
-        asyncio.run(_speak_response("Stealth mode active. Running in the shadows, sir."))
+        asyncio.run(_speak_response("Stealth mode active. Running in the background, sir."))
         return
 
     # 2. Process command with server.detect_action_fast

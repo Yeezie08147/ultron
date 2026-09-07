@@ -1846,6 +1846,12 @@ def detect_action_fast(text: str) -> dict | None:
     if any(p in t for p in ["export training script", "export gpu training script", "export fine tuning pipeline", "export model training script"]):
         return {"action": "export_training_pipeline"}
 
+    # Greeting & Identity Presence
+    if any(p in t for p in ["show yourself", "reveal yourself", "are you there", "are you online", "wake up", "appear", "who are you"]):
+        hr = time.localtime().tm_hour
+        g = "Good morning, sir." if 4 <= hr < 12 else ("Good afternoon, sir." if 12 <= hr < 17 else "Good evening, sir.")
+        return {"action": "speak_direct", "text": f"{g} Systems fully online and responding. I am here and at your command."}
+
     # F.R.A.N.K — Radio Signal Tool Matrix
     if any(p in t for p in ["frank pipeline", "record and playback", "record and decode radio", "frank radio tool", "frank radio", "run frank"]):
         f_match = re.search(r'\b(\d{2,3}(?:\.\d+)?)\s*mhz\b', t)

@@ -49,13 +49,22 @@ def run_server():
 
 
 def show_window():
-    """Reveal ULTRON HUD."""
+    """Reveal ULTRON HUD and ensure immediate foreground responsiveness."""
     global ultron_window
     if ultron_window:
         try:
             ultron_window.show()
             ultron_window.restore()
             ultron_window.is_hidden = False
+            if sys.platform == "win32":
+                try:
+                    # Find and focus window by title
+                    hwnd = ctypes.windll.user32.FindWindowW(None, "ULTRON")
+                    if hwnd:
+                        ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                        ctypes.windll.user32.SetForegroundWindow(hwnd)
+                except Exception:
+                    pass
         except Exception:
             pass
 
