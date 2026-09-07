@@ -425,3 +425,191 @@ def set_clipboard_text(text: str) -> bool:
         except Exception:
             pass
     return False
+
+
+def get_foreground_window() -> Dict[str, Any]:
+    """Get details of the currently focused window on Windows."""
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        if hwnd:
+            length = user32.GetWindowTextLengthW(hwnd)
+            buff = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buff, length + 1)
+            title = buff.value.strip()
+
+            pid = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            proc_name = ""
+            if psutil and pid.value:
+                try:
+                    proc_name = psutil.Process(pid.value).name()
+                except Exception:
+                    pass
+            return {
+                "hwnd": hwnd,
+                "title": title or "Unknown",
+                "process": proc_name,
+                "is_active": True
+            }
+    except Exception as e:
+        log.debug(f"get_foreground_window error: {e}")
+
+    try:
+        if gw:
+            active = gw.getActiveWindow()
+            if active and active.title.strip():
+                return {
+                    "title": active.title.strip(),
+                    "left": active.left,
+                    "top": active.top,
+                    "width": active.width,
+                    "height": active.height,
+                    "is_maximized": active.isMaximized,
+                    "is_active": True
+                }
+    except Exception:
+        pass
+
+    return {"title": "Desktop / Unknown", "is_active": False}
+
+
+def list_active_windows() -> List[Dict[str, Any]]:
+    """List all open visible application windows."""
+    windows = []
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        fg_hwnd = user32.GetForegroundWindow()
+
+        def enum_handler(hwnd, lparam):
+            if user32.IsWindowVisible(hwnd):
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    buff = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd, buff, length + 1)
+                    title = buff.value.strip()
+                    if title and title not in ["Program Manager", "Settings", "Default IME", "MSCTFIME UI"]:
+                        pid = ctypes.c_ulong()
+                        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                        proc_name = ""
+                        if psutil and pid.value:
+                            try:
+                                proc_name = psutil.Process(pid.value).name()
+                            except Exception:
+                                pass
+                        windows.append({
+                            "hwnd": hwnd,
+                            "title": title,
+                            "process": proc_name,
+                            "is_active": (hwnd == fg_hwnd)
+                        })
+            return True
+
+        user32.EnumWindows(EnumWindowsProc(enum_handler), 0)
+    except Exception as e:
+        log.debug(f"list_active_windows error: {e}")
+
+    if not windows and gw:
+        try:
+            for w in gw.getAllWindows():
+                if w.title and w.title.strip() and w.visible and w.width > 50 and w.height > 50:
+                    windows.append({
+                        "title": w.title.strip(),
+                        "left": w.left,
+                        "top": w.top,
+                        "width": w.width,
+                        "height": w.height,
+                        "is_active": w.isActive
+                    })
+        except Exception:
+            pass
+
+    if not windows and psutil:
+        common_user_apps = {
+            "chrome.exe": "Google Chrome",
+            "msedge.exe": "Microsoft Edge",
+            "notepad.exe": "Notepad",
+            "code.exe": "Visual Studio Code",
+            "spotify.exe": "Spotify",
+            "discord.exe": "Discord",
+            "steam.exe": "Steam",
+            "slack.exe": "Slack",
+            "calc.exe": "Calculator",
+            "calculatorapp.exe": "Calculator"
+        }
+        for proc in psutil.process_iter(['name']):
+            try:
+                name = proc.info.get('name', '').lower()
+                if name in common_user_apps:
+                    display_name = common_user_apps[name]
+                    if not any(w["title"] == display_name for w in windows):
+                        windows.append({
+                            "title": display_name,
+                            "process": name,
+                            "is_active": False
+                        })
+            except Exception:
+                pass
+
+    return windows
+
+
+def focus_window(title_keyword: str) -> Dict[str, Any]:
+    """Bring a window matching a keyword to the foreground."""
+    keyword = title_keyword.lower().strip()
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        wins = list_active_windows()
+        for w in wins:
+            if keyword in w["title"].lower() or (w.get("process") and keyword in w["process"].lower()):
+                hwnd = w.get("hwnd")
+                if hwnd:
+                    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                    user32.SetForegroundWindow(hwnd)
+                    return {"success": True, "message": f"Focused window: {w['title']}, sir."}
+        if gw:
+            matches = [w for w in gw.getAllWindows() if keyword in w.title.lower()]
+            if matches:
+                win = matches[0]
+                if win.isMinimized:
+                    win.restore()
+                win.activate()
+                return {"success": True, "message": f"Focused window: {win.title}, sir."}
+    except Exception as e:
+        log.error(f"Failed to focus window: {e}")
+    return {"success": False, "message": f"Could not find an open window matching '{title_keyword}', sir."}
+
+
+def open_folder(folder_path: str = "") -> Dict[str, Any]:
+    """Open a folder in Windows Explorer."""
+    path = folder_path.strip() or str(DESKTOP_DIR)
+    resolved = Path(path).resolve()
+    if resolved.exists():
+        try:
+            os.startfile(str(resolved))
+            return {"success": True, "message": f"Opened folder {resolved.name}, sir."}
+        except Exception as e:
+            return {"success": False, "message": f"Failed to open folder: {e}"}
+    return {"success": False, "message": f"Path '{folder_path}' does not exist, sir."}
+
+
+def list_desktop_files() -> List[Dict[str, Any]]:
+    """List files and folders currently on the user's Desktop."""
+    items = []
+    try:
+        if DESKTOP_DIR.exists():
+            for entry in DESKTOP_DIR.iterdir():
+                if not entry.name.startswith("."):
+                    items.append({
+                        "name": entry.name,
+                        "is_dir": entry.is_dir(),
+                        "size": entry.stat().st_size if entry.is_file() else 0,
+                        "modified": entry.stat().st_mtime
+                    })
+    except Exception as e:
+        log.error(f"Error listing desktop: {e}")
+    return items

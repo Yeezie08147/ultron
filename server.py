@@ -1492,9 +1492,37 @@ app.add_middleware(
 
 # -- REST Endpoints --------------------------------------------------------
 
+_hud_show_callbacks = []
+
+def register_hud_show_callback(cb):
+    if cb not in _hud_show_callbacks:
+        _hud_show_callbacks.append(cb)
+
 @app.get("/api/health")
 async def health():
-    return {"status": "online", "name": "JARVIS", "version": "0.1.0"}
+    return {"status": "online", "name": "ULTRON", "version": "2.0.0"}
+
+
+@app.get("/api/hud/show")
+@app.post("/api/hud/show")
+async def api_hud_show():
+    for cb in _hud_show_callbacks:
+        try:
+            cb(True)
+        except Exception:
+            pass
+    return {"status": "ok", "message": "HUD revealed"}
+
+
+@app.get("/api/hud/hide")
+@app.post("/api/hud/hide")
+async def api_hud_hide():
+    for cb in _hud_show_callbacks:
+        try:
+            cb(False)
+        except Exception:
+            pass
+    return {"status": "ok", "message": "HUD hidden"}
 
 
 @app.get("/api/tts-test")

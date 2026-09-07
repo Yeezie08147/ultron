@@ -220,6 +220,49 @@ def execute_voice_command(phrase: str):
         speak_response(res.get("message", f"Closed {app_name}, sir."))
         return
 
+    # 11b. Focus Window / Switch To App
+    if clean.startswith("focus ") or clean.startswith("switch to "):
+        app_name = re.sub(r'^(?:focus|switch to)\s+', '', phrase, flags=re.IGNORECASE).strip()
+        import desktop_control
+        res = desktop_control.focus_window(app_name)
+        speak_response(res.get("message", f"Focused {app_name}, sir."))
+        return
+
+    # 11c. Switch Window (Alt+Tab)
+    if any(p in clean for p in ["switch window", "next window", "cycle window", "alt tab"]):
+        import desktop_control
+        desktop_control.switch_window()
+        speak_response("Switched window, sir.")
+        return
+
+    # 11d. Press Key / Hotkey
+    if clean.startswith("press ") or clean.startswith("hit "):
+        key_name = re.sub(r'^(?:press|hit)\s+', '', phrase, flags=re.IGNORECASE).strip()
+        import desktop_control
+        desktop_control.press_key(key_name)
+        speak_response(f"Pressed {key_name}, sir.")
+        return
+
+    # 11e. Scroll Mouse Wheel
+    if "scroll down" in clean or "page down" in clean:
+        import desktop_control
+        desktop_control.scroll_mouse(-400)
+        speak_response("Scrolled down, sir.")
+        return
+    if "scroll up" in clean or "page up" in clean:
+        import desktop_control
+        desktop_control.scroll_mouse(400)
+        speak_response("Scrolled up, sir.")
+        return
+
+    # 11f. Open Folder / Directory
+    if clean.startswith("open folder ") or clean.startswith("open directory "):
+        fpath = re.sub(r'^(?:open folder|open directory)\s+', '', phrase, flags=re.IGNORECASE).strip()
+        import desktop_control
+        res = desktop_control.open_folder(fpath)
+        speak_response(res.get("message", "Opened folder, sir."))
+        return
+
     # 12. SmartThings & Multi-Device Control
     if any(p in clean for p in ["turn on all lights", "all lights on"]):
         import smartthings_matrix

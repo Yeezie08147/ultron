@@ -53,21 +53,41 @@ def run_server():
 def show_window():
     """Reveal ULTRON HUD and bring to foreground."""
     global ultron_window
+    shown = False
     if ultron_window:
         try:
             ultron_window.show()
             ultron_window.restore()
             ultron_window.is_hidden = False
-            if sys.platform == "win32":
-                try:
-                    hwnd = ctypes.windll.user32.FindWindowW(None, "ULTRON 2.0")
-                    if not hwnd:
-                        hwnd = ctypes.windll.user32.FindWindowW(None, "ULTRON")
-                    if hwnd:
-                        ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-                        ctypes.windll.user32.SetForegroundWindow(hwnd)
-                except Exception:
-                    pass
+            shown = True
+        except Exception:
+            pass
+
+    if sys.platform == "win32":
+        try:
+            for title in ["ULTRON 2.0", "ULTRON"]:
+                hwnd = ctypes.windll.user32.FindWindowW(None, title)
+                if hwnd:
+                    ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                    ctypes.windll.user32.BringWindowToTop(hwnd)
+                    ctypes.windll.user32.SetForegroundWindow(hwnd)
+                    shown = True
+                    break
+        except Exception:
+            pass
+
+    if not shown:
+        try:
+            import subprocess
+            edge_path = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+            chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+            if os.path.exists(edge_path):
+                subprocess.Popen([edge_path, "--app=http://127.0.0.1:8340", "--start-maximized"])
+            elif os.path.exists(chrome_path):
+                subprocess.Popen([chrome_path, "--app=http://127.0.0.1:8340", "--start-maximized"])
+            else:
+                import webbrowser
+                webbrowser.open("http://127.0.0.1:8340")
         except Exception:
             pass
 
@@ -170,20 +190,47 @@ def hud_callback(show: bool):
 
 
 if __name__ == '__main__':
-    # 1. Start backend server
+    # 0. Single instance check: if ULTRON is already running, reveal window and exit cleanly
+    try:
+        r = requests.get("http://127.0.0.1:8340/api/health", timeout=0.8)
+        if r.status_code == 200:
+            try:
+                requests.get("http://127.0.0.1:8340/api/hud/show", timeout=1.0)
+            except Exception:
+                pass
+            if sys.platform == "win32":
+                for title in ["ULTRON 2.0", "ULTRON"]:
+                    hwnd = ctypes.windll.user32.FindWindowW(None, title)
+                    if hwnd:
+                        ctypes.windll.user32.ShowWindow(hwnd, 9)
+                        ctypes.windll.user32.BringWindowToTop(hwnd)
+                        ctypes.windll.user32.SetForegroundWindow(hwnd)
+                        break
+            sys.exit(0)
+    except Exception:
+        pass
+
+    # 1. Register HUD callback in server
+    try:
+        import server
+        server.register_hud_show_callback(hud_callback)
+    except Exception:
+        pass
+
+    # 2. Start backend server
     threading.Thread(target=run_server, daemon=True).start()
 
-    # 2. Start system tray
+    # 3. Start system tray
     threading.Thread(target=setup_tray, daemon=True).start()
 
-    # 3. Start Global Hotkey Listener (Ctrl+Alt+U)
+    # 4. Start Global Hotkey Listener (Ctrl+Alt+U)
     threading.Thread(target=setup_global_hotkey, daemon=True).start()
 
-    # 4. Connect Stealth Voice Daemon
+    # 5. Connect Stealth Voice Daemon
     stealth_voice_daemon.set_hud_callback(hud_callback)
     stealth_voice_daemon.start_stealth_daemon()
 
-    # 5. Wait for server readiness
+    # 6. Wait for server readiness
     server_ready = False
     for _ in range(30):
         try:
@@ -208,4 +255,10 @@ if __name__ == '__main__':
             background_color='#070402'
         )
         ultron_window.is_hidden = is_stealth_mode
+
+        def on_closing():
+            hide_window()
+            return False  # Keep background daemon alive
+
+        ultron_window.events.closing += on_closing
         webview.start(private_mode=False)
