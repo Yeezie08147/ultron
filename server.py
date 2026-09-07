@@ -1195,18 +1195,30 @@ _last_greeting_time: float = 0
 # ---------------------------------------------------------------------------
 
 async def synthesize_speech(text: str) -> Optional[bytes]:
-    """Generate speech audio from text using local edge-tts."""
+    """Generate speech audio from text using local edge-tts with native SAPI fallback."""
+    clean_text = re.sub(r'[*_#`~]', '', text).strip()
+    if not clean_text:
+        return None
+
+    # 1. Edge-TTS with Windows SSL fix
     try:
         import edge_tts
+        import edge_tts.communicate
+        import ssl
         import tempfile
         import os
         
-        # Use active voice mode protocol settings (Overlord, Stealth, Godmode, Butler)
+        try:
+            edge_tts.communicate._SSL_CTX.check_hostname = False
+            edge_tts.communicate._SSL_CTX.verify_mode = ssl.CERT_NONE
+        except Exception:
+            pass
+
         cur_mode = voice_modes.get_current_mode()
         cfg = voice_modes.MODE_CONFIGS.get(cur_mode, voice_modes.MODE_CONFIGS["overlord"])
         
         communicate = edge_tts.Communicate(
-            text,
+            clean_text,
             cfg.get("voice", "en-GB-RyanNeural"),
             pitch=cfg.get("pitch", "+0Hz"),
             rate=cfg.get("rate", "+0%")
@@ -1221,13 +1233,40 @@ async def synthesize_speech(text: str) -> Optional[bytes]:
             audio_data = f.read()
             
         os.remove(temp_path)
-        
         _session_tokens["tts_calls"] += 1
         _append_usage_entry(0, 0, "tts")
         return audio_data
     except Exception as e:
-        log.error(f"TTS error: {e}")
-        return None
+        log.warning(f"Edge-TTS notice: {e}, using Windows SAPI fallback")
+
+    # 2. Native Windows SAPI SpeechSynthesizer Fallback
+    try:
+        import tempfile
+        import subprocess
+        import os
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as fp:
+            temp_wav = fp.name
+
+        escaped = clean_text.replace("'", "''")
+        ps_cmd = f'''
+        Add-Type -AssemblyName System.Speech;
+        $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer;
+        $synth.SetOutputToWaveFile('{temp_wav}');
+        $synth.Speak('{escaped}');
+        $synth.Dispose();
+        '''
+        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+                       capture_output=True, timeout=5, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+
+        if os.path.exists(temp_wav) and os.path.getsize(temp_wav) > 0:
+            with open(temp_wav, "rb") as f:
+                wav_data = f.read()
+            os.remove(temp_wav)
+            return wav_data
+    except Exception as e2:
+        log.error(f"SAPI fallback failed: {e2}")
+
+    return None
 
 
 # ---------------------------------------------------------------------------

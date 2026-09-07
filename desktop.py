@@ -3,6 +3,7 @@ desktop.py — ULTRON 2.0 Autonomous Desktop & Stealth Background Manager.
 
 Capabilities:
 - Supports --stealth mode: Zero taskbar presence, runs silently in background on Windows boot
+- Direct visual mode: Window opens centered and responsive on screen
 - Continuous voice daemon: Speaks & controls full desktop via voice commands ("Ultron ...")
 - Global Hotkey: Ctrl+Alt+U toggles the HUD interface instantly
 - System Tray: Complete control over visibility, voice listening, and settings
@@ -20,9 +21,11 @@ from PIL import Image
 import webview
 
 # ---------------------------------------------------------------------------
-# Stealth Mode: Hide Windows Console Window completely
+# Console visibility management
 # ---------------------------------------------------------------------------
-if sys.platform == "win313" or sys.platform == "win32":
+is_stealth_mode = "--stealth" in sys.argv or "--ghost" in sys.argv or "--background" in sys.argv
+
+if sys.platform == "win32" and is_stealth_mode:
     try:
         hwnd = ctypes.windll.kernel32.GetConsoleWindow()
         if hwnd:
@@ -38,7 +41,6 @@ except ImportError:
 import uvicorn
 import stealth_voice_daemon
 
-is_stealth_mode = "--stealth" in sys.argv or "--ghost" in sys.argv or "--background" in sys.argv
 ultron_window = None
 tray_icon = None
 
@@ -49,7 +51,7 @@ def run_server():
 
 
 def show_window():
-    """Reveal ULTRON HUD and ensure immediate foreground responsiveness."""
+    """Reveal ULTRON HUD and bring to foreground."""
     global ultron_window
     if ultron_window:
         try:
@@ -58,8 +60,9 @@ def show_window():
             ultron_window.is_hidden = False
             if sys.platform == "win32":
                 try:
-                    # Find and focus window by title
-                    hwnd = ctypes.windll.user32.FindWindowW(None, "ULTRON")
+                    hwnd = ctypes.windll.user32.FindWindowW(None, "ULTRON 2.0")
+                    if not hwnd:
+                        hwnd = ctypes.windll.user32.FindWindowW(None, "ULTRON")
                     if hwnd:
                         ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
                         ctypes.windll.user32.SetForegroundWindow(hwnd)
@@ -122,15 +125,18 @@ def setup_tray():
     else:
         img = Image.new('RGB', (64, 64), (255, 120, 0))
 
-    tray_icon = pystray.Icon("ULTRON", img, "ULTRON 2.0 (Stealth Voice Active)")
+    tray_icon = pystray.Icon("ULTRON", img, "ULTRON 2.0")
     tray_icon.menu = pystray.Menu(
-        pystray.MenuItem("Toggle ULTRON HUD (Ctrl+Alt+U)", toggle_window, default=True),
+        pystray.MenuItem("Toggle ULTRON (Ctrl+Alt+U)", toggle_window, default=True),
         pystray.MenuItem("Show HUD", show_window),
-        pystray.MenuItem("Hide (Stealth Mode)", hide_window),
+        pystray.MenuItem("Hide to Tray", hide_window),
         pystray.MenuItem("Mute Voice Listening", on_toggle_voice_mute),
         pystray.MenuItem("Quit ULTRON", on_quit)
     )
-    tray_icon.run()
+    try:
+        tray_icon.run_detached()
+    except Exception:
+        tray_icon.run()
 
 
 def setup_global_hotkey():
@@ -191,13 +197,15 @@ if __name__ == '__main__':
 
     if server_ready:
         ultron_window = webview.create_window(
-            'ULTRON',
+            'ULTRON 2.0',
             f'http://127.0.0.1:8340/?v={int(time.time())}',
-            fullscreen=True,
-            frameless=True,
+            width=1360,
+            height=860,
+            resizable=True,
+            frameless=False,
             easy_drag=False,
             hidden=is_stealth_mode,
-            background_color='#000000'
+            background_color='#070402'
         )
         ultron_window.is_hidden = is_stealth_mode
         webview.start(private_mode=False)

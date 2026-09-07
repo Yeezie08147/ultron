@@ -2,17 +2,16 @@
 stealth_voice_daemon.py — ULTRON Autonomous Background Voice Daemon (GPT-6 Astra / Jarvis Engine).
 
 Features:
-- Runs silently in the background with ZERO taskbar presence
-- Continuous microphone listening with Wake Word & Conversational Flow ("Ultron ...")
-- Direct desktop execution: Windows UI clicks, typing, window management, apps, screenshots
-- Smart home & IoT dispatch (SmartThings, Samsung TV, lights, scenes)
-- Multi-protocol hardware control (Sub-GHz, NFC, RFID, IR, iButton, BadUSB)
-- Instant TTS audio speech playback directly through system speakers
-- HUD visibility voice triggers ("Ultron, show HUD" / "Ultron, stealth mode")
+- Continuous ambient microphone listening with zero taskbar / window requirement
+- Full Desktop Access: shell commands, apps, typing, clicking, window control, volume, lock
+- Dynamic time greeting ("Good morning / afternoon / evening, sir.") on "Show yourself"
+- Edge-TTS neural speech with SSL bypass and Windows SAPI fallback
+- SmartThings IoT, Sub-GHz RF, F.R.A.N.K SDR Radio & Neural Brain matrix dispatch
 """
 
 import os
 import re
+import ssl
 import time
 import asyncio
 import logging
@@ -23,7 +22,15 @@ from typing import Callable, Optional, Dict, Any
 
 log = logging.getLogger("ultron.stealth_daemon")
 
-# Wake triggers
+# Bypass SSL verification for Edge-TTS on Windows
+try:
+    import edge_tts.communicate
+    edge_tts.communicate._SSL_CTX.check_hostname = False
+    edge_tts.communicate._SSL_CTX.verify_mode = ssl.CERT_NONE
+except Exception:
+    pass
+
+# Wake trigger prefixes (optional — direct commands are also handled)
 WAKE_TRIGGERS = [
     "ultron",
     "hey ultron",
@@ -56,39 +63,6 @@ def toggle_mute_listening() -> bool:
     return _is_listening_muted
 
 
-async def _speak_response(text: str):
-    """Synthesize and play audio response through system speakers in background."""
-    if not text:
-        return
-    clean_text = re.sub(r'[*_#`~"\n\r]', ' ', text).strip()
-    
-    # 1. Try edge-tts
-    spoken = False
-    try:
-        import edge_tts
-        import tempfile
-        communicate = edge_tts.Communicate(clean_text, "en-GB-RyanNeural", pitch="+0Hz", rate="+5%")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
-            temp_mp3 = fp.name
-        await communicate.save(temp_mp3)
-        ps_cmd = f'Add-Type -AssemblyName presentationCore; $p = New-Object System.Windows.Media.MediaPlayer; $p.Open([System.Uri]"{temp_mp3}"); $p.Play(); Start-Sleep -Milliseconds {int(len(clean_text) * 75 + 1000)}; $p.Close()'
-        subprocess.Popen(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
-                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-        spoken = True
-    except Exception:
-        pass
-
-    # 2. Native Windows SAPI Speech Synthesizer fallback (100% Offline, Instant)
-    if not spoken:
-        try:
-            escaped_text = clean_text.replace("'", "''")
-            ps_sapi = f'Add-Type -AssemblyName System.Speech; $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer; $synth.Rate = 1; $synth.Speak(\'{escaped_text}\')'
-            subprocess.Popen(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_sapi],
-                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-        except Exception as e:
-            log.warning(f"SAPI TTS fallback note: {e}")
-
-
 def get_time_greeting() -> str:
     """Generate dynamic time-of-day greeting."""
     hr = time.localtime().tm_hour
@@ -100,164 +74,222 @@ def get_time_greeting() -> str:
         return "Good evening, sir."
 
 
-def execute_voice_command(phrase: str):
-    """Process voice command through ULTRON's fast action matrix, desktop agent, and brains."""
-    clean = phrase.strip().lower()
+def speak_response_sync(text: str):
+    """Synthesize and play audio response synchronously or in a thread."""
+    if not text:
+        return
+    clean_text = re.sub(r'[*_#`~"\n\r]', ' ', text).strip()
     
-    # 1. Check for "Show yourself" & HUD visibility commands
+    # 1. Edge-TTS with SSL bypass
+    spoken = False
+    try:
+        import edge_tts
+        import tempfile
+
+        async def _gen_edge():
+            c = edge_tts.Communicate(clean_text, "en-GB-RyanNeural", pitch="+0Hz", rate="+5%")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
+                tmp = fp.name
+            await c.save(tmp)
+            return tmp
+
+        mp3_path = asyncio.run(_gen_edge())
+        ps_cmd = f'Add-Type -AssemblyName presentationCore; $p = New-Object System.Windows.Media.MediaPlayer; $p.Open([System.Uri]"{mp3_path}"); $p.Play(); Start-Sleep -Milliseconds {int(len(clean_text) * 75 + 1000)}; $p.Close(); Remove-Item -Force "{mp3_path}" -ErrorAction SilentlyContinue'
+        subprocess.Popen(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        spoken = True
+    except Exception:
+        pass
+
+    # 2. Native Windows SAPI Speech Synthesizer fallback
+    if not spoken:
+        try:
+            escaped = clean_text.replace("'", "''")
+            ps_sapi = f'Add-Type -AssemblyName System.Speech; $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer; $synth.Rate = 1; $synth.Speak(\'{escaped}\')'
+            subprocess.Popen(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_sapi],
+                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        except Exception as e:
+            log.warning(f"TTS audio note: {e}")
+
+
+def speak_response(text: str):
+    """Dispatch speech response in background thread for zero-latency execution."""
+    threading.Thread(target=speak_response_sync, args=(text,), daemon=True).start()
+
+
+def execute_voice_command(phrase: str):
+    """Full Desktop Access: Execute any voice command with zero limitations."""
+    clean = phrase.strip().lower()
+    log.info(f"Processing command: '{clean}'")
+
+    # 1. "Show yourself" & HUD visibility commands
     if any(p in clean for p in [
         "show yourself", "reveal yourself", "show hud", "show window",
         "open hud", "wake up", "restore window", "reveal window",
-        "appear", "come online", "turn on app", "open app ultron", "where are you"
+        "appear", "come online", "turn on app", "where are you", "are you there"
     ]):
         if _toggle_hud_callback:
             _toggle_hud_callback(True)
         greeting = get_time_greeting()
-        asyncio.run(_speak_response(f"{greeting} Systems fully online and responding. I am here and at your command."))
+        msg = f"{greeting} Systems fully online and responding. I am here and at your command."
+        speak_response(msg)
         return
 
-    if any(p in clean for p in ["hide hud", "hide window", "stealth mode", "ghost mode", "minimize to tray", "hide yourself", "go away"]):
+    # 2. Stealth / Hide commands
+    if any(p in clean for p in ["hide hud", "hide window", "stealth mode", "ghost mode", "minimize to tray", "hide yourself"]):
         if _toggle_hud_callback:
             _toggle_hud_callback(False)
-        asyncio.run(_speak_response("Stealth mode active. Running in the background, sir."))
+        speak_response("Stealth mode active. Running in the background, sir.")
         return
 
-    # 2. Process command with server.detect_action_fast
+    # 3. Direct Shell Command Execution ("run command ...", "execute ...", "powershell ...")
+    if clean.startswith("run command ") or clean.startswith("execute command ") or clean.startswith("powershell "):
+        cmd_str = re.sub(r'^(?:run command|execute command|powershell)\s+', '', phrase, flags=re.IGNORECASE).strip()
+        import desktop_control
+        res = desktop_control.execute_shell_command(cmd_str)
+        speak_response(f"Executed: {res.get('message', 'Command finished.')}")
+        return
+
+    # 4. Minimize / Show Desktop
+    if any(p in clean for p in ["minimize all", "show desktop", "minimize windows"]):
+        import desktop_control
+        desktop_control.minimize_all()
+        speak_response("Desktop revealed, sir.")
+        return
+
+    # 5. Lock Workstation
+    if any(p in clean for p in ["lock pc", "lock computer", "lock screen", "lock workstation"]):
+        import desktop_control
+        desktop_control.lock_pc()
+        speak_response("Workstation locked, sir.")
+        return
+
+    # 6. Volume Management
+    if any(p in clean for p in ["volume up", "louder", "turn up volume"]):
+        import desktop_control
+        desktop_control.volume_up()
+        speak_response("Volume increased, sir.")
+        return
+    if any(p in clean for p in ["volume down", "quieter", "lower volume"]):
+        import desktop_control
+        desktop_control.volume_down()
+        speak_response("Volume decreased, sir.")
+        return
+    if any(p in clean for p in ["mute audio", "mute sound", "mute volume", "unmute"]):
+        import desktop_control
+        desktop_control.mute_volume()
+        speak_response("Audio mute toggled, sir.")
+        return
+
+    # 7. Typing Injection ("type ...", "write ...")
+    if clean.startswith("type ") or clean.startswith("write "):
+        text_to_type = re.sub(r'^(?:type|write)\s+', '', phrase, flags=re.IGNORECASE).strip()
+        import desktop_control
+        desktop_control.type_text(text_to_type)
+        speak_response(f"Typed {len(text_to_type)} characters, sir.")
+        return
+
+    # 8. Web Search
+    if clean.startswith("search for ") or clean.startswith("google ") or clean.startswith("search web for "):
+        q = re.sub(r'^(?:search for|google|search web for)\s+', '', phrase, flags=re.IGNORECASE).strip()
+        import desktop_control
+        desktop_control.search_web_browser(q)
+        speak_response(f"Searched for {q}, sir.")
+        return
+
+    # 9. Screenshot
+    if any(p in clean for p in ["take screenshot", "take a screenshot", "capture screen", "screenshot"]):
+        import desktop_control
+        desktop_control.capture_screenshot()
+        speak_response("Screenshot captured to Desktop, sir.")
+        return
+
+    # 10. Open App / Launch
+    if clean.startswith("open ") or clean.startswith("launch ") or clean.startswith("start "):
+        app_name = re.sub(r'^(?:open|launch|start)\s+', '', phrase, flags=re.IGNORECASE).strip()
+        import desktop_control
+        res = desktop_control.open_app(app_name)
+        speak_response(res.get("message", f"Opened {app_name}, sir."))
+        return
+
+    # 11. Close App / Terminate
+    if clean.startswith("close ") or clean.startswith("terminate ") or clean.startswith("kill "):
+        app_name = re.sub(r'^(?:close|terminate|kill)\s+', '', phrase, flags=re.IGNORECASE).strip()
+        import desktop_control
+        res = desktop_control.close_app(app_name)
+        speak_response(res.get("message", f"Closed {app_name}, sir."))
+        return
+
+    # 12. SmartThings & Multi-Device Control
+    if any(p in clean for p in ["turn on all lights", "all lights on"]):
+        import smartthings_matrix
+        asyncio.run(smartthings_matrix.control_all_lights("on"))
+        speak_response("All lights powered on, sir.")
+        return
+    if any(p in clean for p in ["turn off all lights", "all lights off"]):
+        import smartthings_matrix
+        asyncio.run(smartthings_matrix.control_all_lights("off"))
+        speak_response("All lights powered off, sir.")
+        return
+    if any(p in clean for p in ["movie mode", "cinema mode", "good night", "all off"]):
+        import smartthings_matrix
+        res = asyncio.run(smartthings_matrix.execute_smart_scene(clean))
+        speak_response(res.get("message", "Scene executed, sir."))
+        return
+
+    # 13. Sub-GHz Radio & F.R.A.N.K
+    if "sub ghz" in clean or "sub-ghz" in clean:
+        import sub_ghz
+        res = sub_ghz.read(433.92)
+        speak_response(res.get("message", "Sub-GHz read complete, sir."))
+        return
+    if "frank" in clean or "radio signal" in clean:
+        import frank_radio
+        res = frank_radio.record_raw_signal(100000000)
+        speak_response(res.get("message", "Radio signal recorded, sir."))
+        return
+
+    # 14. Server fast action detection fallback
     try:
         from server import detect_action_fast
         action = detect_action_fast(clean)
-    except Exception as e:
-        log.error(f"Action detection error: {e}")
-        action = None
+        if action:
+            act_type = action.get("action", "")
+            if act_type == "speak_direct":
+                speak_response(action.get("text", "Handled, sir."))
+                return
+    except Exception:
+        pass
 
-    response_text = "Command executed, sir."
-
-    if action:
-        act_type = action.get("action", "")
-        log.info(f"Stealth Voice Action: {act_type}")
-
-        # Desktop controls
-        if act_type == "open_app":
-            app_name = action.get("target", "")
-            try:
-                import desktop_control
-                res = desktop_control.open_application(app_name)
-                response_text = res.get("message", f"Opened {app_name}, sir.")
-            except Exception:
-                subprocess.Popen(["cmd", "/c", "start", "", app_name], shell=True)
-                response_text = f"Launching {app_name}, sir."
-
-        elif act_type == "close_app":
-            app_name = action.get("target", "")
-            try:
-                import desktop_control
-                res = desktop_control.close_application(app_name)
-                response_text = res.get("message", f"Closed {app_name}, sir.")
-            except Exception:
-                subprocess.Popen(["taskkill", "/f", "/im", f"{app_name}.exe"], shell=True)
-                response_text = f"Terminated {app_name}, sir."
-
-        elif act_type == "screenshot":
-            try:
-                import desktop_control
-                res = desktop_control.take_screenshot()
-                response_text = res.get("message", "Screenshot captured, sir.")
-            except Exception:
-                response_text = "Screenshot saved, sir."
-
-        elif act_type == "device_unlock_all":
-            try:
-                import device_control
-                res = asyncio.run(device_control.unlock_all())
-                response_text = res.get("message", "Devices unlocked, sir.")
-            except Exception:
-                response_text = "Unlocked phone via ADB, sir."
-
-        elif act_type.startswith("smartthings_"):
-            try:
-                import smartthings_matrix
-                if act_type == "smartthings_lights":
-                    res = asyncio.run(smartthings_matrix.control_all_lights(action.get("state", "on")))
-                elif act_type == "smartthings_tv":
-                    res = asyncio.run(smartthings_matrix.control_device("Samsung TV", action.get("cmd", "on")))
-                elif act_type == "smartthings_scene":
-                    res = asyncio.run(smartthings_matrix.execute_smart_scene(action.get("scene", "movie")))
-                else:
-                    res = asyncio.run(smartthings_matrix.list_devices())
-                response_text = res.get("message", "Smart home updated, sir.")
-            except Exception as e:
-                response_text = "SmartThings command executed, sir."
-
-        elif act_type.startswith("sub_ghz_"):
-            try:
-                import sub_ghz
-                if act_type == "sub_ghz_read":
-                    res = sub_ghz.read(action.get("frequency", 433.92))
-                elif act_type == "sub_ghz_read_raw":
-                    res = sub_ghz.read_raw(action.get("frequency", 433.92))
-                else:
-                    res = sub_ghz.scan_spectrum(action.get("band", "433"))
-                response_text = res.get("message", "Sub-GHz RF matrix executed, sir.")
-            except Exception:
-                response_text = "Sub-GHz operation complete, sir."
-
-        elif act_type.startswith("frank_"):
-            try:
-                import frank_radio
-                if act_type == "frank_pipeline":
-                    res = frank_radio.full_pipeline(frequency=action.get("frequency", 100000000))
-                else:
-                    res = frank_radio.record_raw_signal(frequency=action.get("frequency", 100000000))
-                response_text = res.get("message", "F.R.A.N.K radio operation complete, sir.")
-            except Exception:
-                response_text = "F.R.A.N.K radio signal processed, sir."
-
-        elif act_type == "search_web":
-            q = action.get("target", "")
-            try:
-                import desktop_control
-                res = desktop_control.search_web_browser(q)
-                response_text = res.get("message", f"Searched for {q}, sir.")
-            except Exception:
-                response_text = f"Opened search for {q}, sir."
-
-        elif act_type == "speak_direct":
-            response_text = action.get("text", "Handled, sir.")
-
-        else:
-            response_text = f"Protocol {act_type} executed, sir."
-    else:
-        # Pass to local Ollama brain or frontier matrix for intelligent desktop answer
-        try:
-            from ollama_brain import generate_response
-            response_text = generate_response(clean)
-        except Exception:
-            response_text = "Command processed, sir."
-
-    # Speak response asynchronously
-    asyncio.run(_speak_response(response_text))
+    # 15. Intelligent Brain Answering (Ollama Local / Frontier Matrix)
+    try:
+        from ollama_brain import generate_response
+        ans = generate_response(phrase)
+        speak_response(ans)
+    except Exception:
+        speak_response("Command processed, sir.")
 
 
 def _background_listener_loop():
-    """Continuous microphone listening thread."""
+    """Continuous microphone listening loop with speech recognition."""
     global _daemon_running
-    log.info("Starting ULTRON Background Voice Daemon...")
+    log.info("Starting ULTRON Full Desktop Background Voice Listener...")
 
     r = sr.Recognizer()
     r.dynamic_energy_threshold = True
-    r.energy_threshold = 300
-    r.pause_threshold = 0.6
+    r.energy_threshold = 220
+    r.pause_threshold = 0.5
     r.non_speaking_duration = 0.3
 
     try:
         mic = sr.Microphone()
         with mic as source:
-            r.adjust_for_ambient_noise(source, duration=1.0)
+            r.adjust_for_ambient_noise(source, duration=0.8)
     except Exception as e:
-        log.error(f"Microphone init failed: {e}")
+        log.error(f"Microphone init error: {e}")
         return
 
-    log.info("Background Voice Daemon is listening for 'ULTRON [command]'...")
+    log.info("ULTRON Background Voice Daemon online. Listening for full desktop commands...")
 
     def audio_callback(recognizer: sr.Recognizer, audio: sr.AudioData):
         if _is_listening_muted:
@@ -272,10 +304,10 @@ def _background_listener_loop():
         if not text:
             return
 
+        log.info(f"Heard voice: '{text}'")
         t_lower = text.lower()
-        log.info(f"Ambient voice captured: '{text}'")
 
-        # Check if wake trigger is in phrase
+        # Check if wake trigger is present in phrase
         matched_trigger = None
         for trigger in WAKE_TRIGGERS:
             if trigger in t_lower:
@@ -283,27 +315,28 @@ def _background_listener_loop():
                 break
 
         if matched_trigger:
-            # Strip the trigger word to get the actual command
             idx = t_lower.find(matched_trigger)
             command_part = text[idx + len(matched_trigger):].strip(" ,:.-")
             if command_part:
-                log.info(f"Executing voice command: '{command_part}'")
                 threading.Thread(target=execute_voice_command, args=(command_part,), daemon=True).start()
             else:
-                # User just said "Ultron" -> provide audio acknowledgment
-                asyncio.run(_speak_response("At your service, sir."))
+                greeting = get_time_greeting()
+                speak_response_sync(f"{greeting} At your service, sir.")
+        else:
+            # Full Desktop Access: No wake word required for direct commands!
+            threading.Thread(target=execute_voice_command, args=(text,), daemon=True).start()
 
     try:
-        stop_fn = r.listen_in_background(mic, audio_callback, phrase_time_limit=5)
+        stop_fn = r.listen_in_background(mic, audio_callback, phrase_time_limit=6)
         while _daemon_running:
             time.sleep(1)
         stop_fn(wait_for_stop=False)
     except Exception as e:
-        log.error(f"Background listener loop error: {e}")
+        log.error(f"Listener loop crashed: {e}")
 
 
 def start_stealth_daemon():
-    """Start background voice listener thread."""
+    """Start background voice daemon."""
     global _daemon_running
     if _daemon_running:
         return
@@ -313,6 +346,6 @@ def start_stealth_daemon():
 
 
 def stop_stealth_daemon():
-    """Stop background voice listener."""
+    """Stop background voice daemon."""
     global _daemon_running
     _daemon_running = False

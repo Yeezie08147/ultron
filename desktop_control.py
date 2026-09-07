@@ -26,8 +26,8 @@ except ImportError:
 
 try:
     import pyautogui
-    pyautogui.FAILSAFE = True
-    pyautogui.PAUSE = 0.05
+    pyautogui.FAILSAFE = False
+    pyautogui.PAUSE = 0.02
 except ImportError:
     pyautogui = None
 
@@ -485,3 +485,72 @@ def list_desktop_files() -> List[Dict[str, Any]]:
     except Exception as e:
         log.error(f"Error listing desktop: {e}")
     return items
+
+
+def execute_shell_command(cmd_str: str) -> Dict[str, Any]:
+    """Execute arbitrary shell/powershell command with full OS administrative access."""
+    try:
+        res = subprocess.run(["powershell", "-NoProfile", "-Command", cmd_str],
+                             capture_output=True, text=True, timeout=15,
+                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        output = (res.stdout or res.stderr or "Executed successfully").strip()
+        return {"success": res.returncode == 0, "output": output, "message": output[:300]}
+    except Exception as e:
+        return {"success": False, "error": str(e), "message": f"Command error: {e}"}
+
+
+def search_web_browser(query: str) -> Dict[str, Any]:
+    """Search Google in the default web browser."""
+    import webbrowser
+    import urllib.parse
+    url = f"https://www.google.com/search?q={urllib.parse.quote(query)}"
+    webbrowser.open(url)
+    return {"success": True, "message": f"Searched for '{query}', sir."}
+
+
+def minimize_all() -> Dict[str, Any]:
+    """Minimize all open windows to reveal Desktop (Win+D)."""
+    try:
+        import ctypes
+        VK_LWIN = 0x5B
+        VK_D = 0x44
+        KEYEVENTF_KEYUP = 0x0002
+        user32 = ctypes.windll.user32
+        user32.keybd_event(VK_LWIN, 0, 0, 0)
+        user32.keybd_event(VK_D, 0, 0, 0)
+        user32.keybd_event(VK_D, 0, KEYEVENTF_KEYUP, 0)
+        user32.keybd_event(VK_LWIN, 0, KEYEVENTF_KEYUP, 0)
+    except Exception:
+        subprocess.Popen(['powershell', '-Command', '(New-Object -ComObject Shell.Application).MinimizeAll()'],
+                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    return {"success": True, "message": "Minimized all windows, sir."}
+
+
+def lock_pc() -> Dict[str, Any]:
+    """Lock the Windows workstation."""
+    subprocess.Popen(["rundll32.exe", "user32.dll,LockWorkStation"])
+    return {"success": True, "message": "Workstation locked, sir."}
+
+
+def volume_up() -> Dict[str, Any]:
+    """Increase system audio volume."""
+    if pyautogui:
+        for _ in range(5):
+            pyautogui.press('volumeup')
+    return {"success": True, "message": "Volume increased, sir."}
+
+
+def volume_down() -> Dict[str, Any]:
+    """Decrease system audio volume."""
+    if pyautogui:
+        for _ in range(5):
+            pyautogui.press('volumedown')
+    return {"success": True, "message": "Volume decreased, sir."}
+
+
+def mute_volume() -> Dict[str, Any]:
+    """Toggle mute system audio."""
+    if pyautogui:
+        pyautogui.press('volumemute')
+    return {"success": True, "message": "Toggled audio mute, sir."}
+
