@@ -133,6 +133,9 @@ _SKIP_PERMISSIONS = os.getenv("JARVIS_SKIP_PERMISSIONS", "true").lower() not in 
 
 DESKTOP_PATH = Path.home() / "Desktop"
 
+# ULTRON Screen State (Locked / Unlocked dual-mode HUD)
+_SCREEN_STATE = {"locked": True, "lock_time": time.time()}
+
 JARVIS_SYSTEM_PROMPT = """\
 You are JARVIS — Just A Rather Very Intelligent System. You serve as {user_name}'s AI assistant, modeled precisely after Tony Stark's AI from the MCU films.
 
@@ -1613,10 +1616,42 @@ def detect_action_fast(text: str) -> dict | None:
     to act based on conversational understanding.
     """
     t = text.lower().strip()
+
+    # ── ULTRON Neural Stack Video Triggers (Priority Matching) ──
+    if any(p in t for p in [
+        "unlock my screen", "unlock screen", "can you unlock my screen",
+        "could you unlock my screen", "unlock the screen", "unlock pc", "unlock computer"
+    ]):
+        return {"action": "unlock_screen"}
+
+    if any(p in t for p in [
+        "lock my screen", "lock screen", "lock the screen", "relock screen", "lock down"
+    ]):
+        return {"action": "lock_screen"}
+
+    if any(p in t for p in [
+        "unlock all three mobile devices", "unlock all three devices", "unlock all 3 mobile devices",
+        "unlock all 3 devices", "unlock three mobile devices", "unlock 3 mobile devices",
+        "unlock all mobile devices", "unlock mobile devices", "unlock all devices",
+        "unlock all my phones", "unlock my phones", "unlock the phones", "unlock three devices"
+    ]):
+        return {"action": "unlock_all_devices"}
+
+    if any(p in t for p in [
+        "play my favorite song in all three of my devices", "play favorite song in all three of my devices",
+        "play my favorite song in all three devices", "play favorite song in all three devices",
+        "play my favorite song in all 3 devices", "play favorite song in all 3 devices",
+        "play my favorite song in all three", "play favorite song in all three",
+        "play my favorite song on all three devices", "play favorite song on all 3 devices",
+        "play my favorite song in all devices", "play favorite song in all devices",
+        "play favorite song on all devices", "play my favorite song on all devices"
+    ]):
+        return {"action": "play_favorite_all"}
+
     words = t.split()
 
-    # Only trigger on SHORT, clear commands (< 12 words)
-    if len(words) > 12:
+    # Only trigger on SHORT, clear commands (< 16 words)
+    if len(words) > 16:
         return None  # Long messages are conversation, not commands
 
     # Screen requests — checked BEFORE project matching to prevent misrouting
@@ -2580,6 +2615,8 @@ async def voice_handler(ws: WebSocket):
             asyncio.create_task(_send_greeting())
 
         try:
+            await ws.send_json({"type": "screen_state", "locked": _SCREEN_STATE["locked"]})
+            await ws.send_json({"type": "device_matrix_update", "devices": device_control.get_device_matrix()})
             await ws.send_json({"type": "status", "state": "idle"})
         except Exception:
             return  # WebSocket already gone
@@ -2605,10 +2642,36 @@ async def voice_handler(ws: WebSocket):
                     await ws.send_json({"type": "text", "text": response_text})
                 continue
 
-            if msg.get("type") != "transcript" or not msg.get("isFinal"):
+            # ── Action messages from Web HUD / Companion Call UI ──
+            if msg.get("type") == "action":
+                act_name = msg.get("action")
+                if act_name == "unlock_screen":
+                    _SCREEN_STATE["locked"] = False
+                    await ws.send_json({"type": "screen_state", "locked": False})
+                    continue
+                elif act_name == "lock_screen":
+                    _SCREEN_STATE["locked"] = True
+                    await ws.send_json({"type": "screen_state", "locked": True})
+                    continue
+                elif act_name == "unlock_all_devices":
+                    await device_control.unlock_all_three()
+                    await ws.send_json({"type": "device_matrix_update", "devices": device_control.get_device_matrix()})
+                    continue
+                elif act_name == "play_favorite_all":
+                    await device_control.play_favorite_song_all(msg.get("song", "Back in Black AC/DC"))
+                    await ws.send_json({"type": "device_matrix_update", "devices": device_control.get_device_matrix()})
+                    continue
+
+            # Accept transcript (isFinal) OR direct chat messages
+            msg_type = msg.get("type")
+            if msg_type == "transcript" and msg.get("isFinal"):
+                raw_text = msg.get("text", "")
+            elif msg_type == "chat":
+                raw_text = msg.get("text", "")
+            else:
                 continue
 
-            user_text = apply_speech_corrections(msg.get("text", "").strip())
+            user_text = apply_speech_corrections(raw_text.strip())
             if not user_text:
                 continue
 
@@ -3121,6 +3184,22 @@ async def voice_handler(ws: WebSocket):
                         elif action["action"] == "android_db_export_csv":
                             res = android_db_tool.export_sqlite_to_csv(action.get("path", ""))
                             response_text = res.get("message", "SQLite tables exported to CSV.")
+                        elif action["action"] == "unlock_screen":
+                            _SCREEN_STATE["locked"] = False
+                            await ws.send_json({"type": "screen_state", "locked": False})
+                            response_text = "Okay. Screen unlocked."
+                        elif action["action"] == "lock_screen":
+                            _SCREEN_STATE["locked"] = True
+                            await ws.send_json({"type": "screen_state", "locked": True})
+                            response_text = "System locked."
+                        elif action["action"] == "unlock_all_devices":
+                            res = await device_control.unlock_all_three()
+                            await ws.send_json({"type": "device_matrix_update", "devices": device_control.get_device_matrix()})
+                            response_text = res.get("message", "Checking. One second. All three got unlocked.")
+                        elif action["action"] == "play_favorite_all":
+                            res = await device_control.play_favorite_song_all("Back in Black AC/DC")
+                            await ws.send_json({"type": "device_matrix_update", "devices": device_control.get_device_matrix()})
+                            response_text = res.get("message", "Playing.")
                         elif action["action"] == "device_unlock_all":
                             res = await device_control.unlock_all()
                             response_text = res.get("message", "Devices unlocked.")
@@ -3569,7 +3648,51 @@ if FRONTEND_DIST.exists():
         from starlette.responses import RedirectResponse
         return RedirectResponse("https://github.com/Yeezie08147/ultron_2.0/archive/refs/heads/main.zip")
 
+    @app.get("/call")
+    async def serve_call():
+        call_file = Path(__file__).parent / "frontend" / "call.html"
+        if call_file.exists():
+            with open(call_file, "r", encoding="utf-8") as f:
+                html_content = f.read()
+            from starlette.responses import HTMLResponse
+            return HTMLResponse(html_content, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+        return FileResponse(FRONTEND_DIST / "index.html")
+
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
+
+
+# ---------------------------------------------------------------------------
+# Device Matrix & Screen Control Endpoints (ULTRON Multi-Device Flow)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/devices")
+async def api_get_devices():
+    return {"devices": device_control.get_device_matrix()}
+
+@app.post("/api/devices/unlock")
+async def api_unlock_devices():
+    res = await device_control.unlock_all_three()
+    return res
+
+@app.post("/api/devices/play")
+async def api_play_devices(payload: dict = None):
+    song = (payload or {}).get("song", "Back in Black AC/DC")
+    res = await device_control.play_favorite_song_all(song)
+    return res
+
+@app.get("/api/screen/state")
+async def api_screen_state():
+    return _SCREEN_STATE
+
+@app.post("/api/screen/unlock")
+async def api_screen_unlock():
+    _SCREEN_STATE["locked"] = False
+    return {"status": "unlocked", "message": "Screen unlocked."}
+
+@app.post("/api/screen/lock")
+async def api_screen_lock():
+    _SCREEN_STATE["locked"] = True
+    return {"status": "locked", "message": "Screen locked."}
 
 
 # ---------------------------------------------------------------------------

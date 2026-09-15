@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Ultron - Live Call</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; user-select: none; }
+    body {
+      background: radial-gradient(circle at 50% 20%, #151c2e 0%, #080a10 100%);
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      padding: 40px 20px;
+      overflow: hidden;
+    }
+
+    /* Call Header */
+    .call-header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 20px;
+      text-align: center;
+    }
+    .call-avatar {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #ff8c00 0%, #c0392b 70%, #1a0800 100%);
+      box-shadow: 0 0 35px rgba(255, 120, 0, 0.6), inset 0 0 15px rgba(255, 200, 50, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+      position: relative;
+      animation: pulse-glow 2.5s infinite ease-in-out;
+    }
+    .call-avatar svg {
+      width: 44px;
+      height: 44px;
+      fill: none;
+      stroke: #fff;
+      stroke-width: 2;
+    }
+    @keyframes pulse-glow {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 25px rgba(255, 120, 0, 0.5); }
+      50% { transform: scale(1.05); box-shadow: 0 0 45px rgba(255, 140, 0, 0.9); }
+    }
+    .caller-name {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: #ffffff;
+      margin-bottom: 6px;
+    }
+    .call-timer {
+      font-size: 16px;
+      color: #94a3b8;
+      font-weight: 500;
+      letter-spacing: 1px;
+    }
+    .call-subtitle {
+      font-size: 13px;
+      color: #ff9800;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    /* Center Visualizer & Status */
+    .center-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 320px;
+    }
+    .waveform-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      height: 40px;
+      margin-bottom: 15px;
+    }
+    .bar {
+      width: 4px;
+      height: 10px;
+      background: #ff7800;
+      border-radius: 2px;
+      animation: wave 1.2s infinite ease-in-out alternate;
+    }
+    .bar:nth-child(2) { animation-delay: 0.15s; }
+    .bar:nth-child(3) { animation-delay: 0.3s; }
+    .bar:nth-child(4) { animation-delay: 0.45s; }
+    .bar:nth-child(5) { animation-delay: 0.6s; }
+    .bar:nth-child(6) { animation-delay: 0.75s; }
+    .bar:nth-child(7) { animation-delay: 0.9s; }
+    .bar:nth-child(8) { animation-delay: 1.05s; }
+    @keyframes wave {
+      0% { height: 6px; opacity: 0.4; }
+      100% { height: 35px; opacity: 1; background: #ffaa00; }
+    }
+    .status-badge {
+      background: rgba(255, 120, 0, 0.12);
+      border: 1px solid rgba(255, 120, 0, 0.35);
+      padding: 8px 18px;
+      border-radius: 20px;
+      font-size: 13px;
+      color: #ffb74d;
+      text-align: center;
+      backdrop-filter: blur(10px);
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+    }
+
+    /* Actions Grid */
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px 24px;
+      width: 100%;
+      max-width: 330px;
+      margin: 20px 0;
+    }
+    .action-btn-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .action-btn {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      backdrop-filter: blur(12px);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .action-btn svg {
+      width: 26px;
+      height: 26px;
+      stroke-width: 1.8;
+    }
+    .action-btn:active {
+      transform: scale(0.92);
+      background: rgba(255, 140, 0, 0.4);
+      border-color: #ff9800;
+    }
+    .action-btn.active {
+      background: #ff7800;
+      border-color: #ffa726;
+      box-shadow: 0 0 20px rgba(255, 120, 0, 0.6);
+    }
+    .action-label {
+      font-size: 11px;
+      color: #cbd5e1;
+      font-weight: 500;
+      letter-spacing: 0.5px;
+    }
+
+    /* End Call Button */
+    .call-footer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .btn-end-call {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: #ef4444;
+      border: none;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(239, 68, 68, 0.5);
+      transition: all 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-end-call:active {
+      transform: scale(0.9);
+      background: #dc2626;
+    }
+    .btn-end-call svg {
+      width: 32px;
+      height: 32px;
+      transform: rotate(135deg);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Call Header -->
+  <div class="call-header">
+    <div class="call-avatar">
+      <svg viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9"/>
+        <line x1="12" y1="3" x2="12" y2="7"/>
+        <line x1="12" y1="17" x2="12" y2="21"/>
+        <line x1="3" y1="12" x2="7" y2="12"/>
+        <line x1="17" y1="12" x2="21" y2="12"/>
+        <circle cx="12" cy="12" r="3" fill="#fff"/>
+      </svg>
+    </div>
+    <div class="caller-name">ULTRON</div>
+    <div id="call-timer" class="call-timer">00:00</div>
+    <div class="call-subtitle">SECURE NEURAL UPLINK</div>
+  </div>
+
+  <!-- Center Status & Audio Visualizer -->
+  <div class="center-panel">
+    <div class="waveform-bar">
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+    </div>
+    <div id="status-text" class="status-badge">Tap any button or speak to Ultron...</div>
+  </div>
+
+  <!-- Interactive Controls Grid (Matches Video) -->
+  <div class="action-grid">
+    <!-- Mute -->
+    <div class="action-btn-wrapper">
+      <button class="action-btn" id="btn-mute" title="Mute Mic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+        </svg>
+      </button>
+      <span class="action-label">Mute</span>
+    </div>
+
+    <!-- Unlock Screen -->
+    <div class="action-btn-wrapper">
+      <button class="action-btn" id="btn-unlock-screen" title="Unlock PC Screen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+        </svg>
+      </button>
+      <span class="action-label">Unlock PC</span>
+    </div>
+
+    <!-- Unlock 3 Devices -->
+    <div class="action-btn-wrapper">
+      <button class="action-btn" id="btn-unlock-devices" title="Unlock All 3 Devices">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+          <line x1="12" y1="18" x2="12.01" y2="18"/>
+        </svg>
+      </button>
+      <span class="action-label">Unlock 3 Devices</span>
+    </div>
+
+    <!-- Play Song -->
+    <div class="action-btn-wrapper">
+      <button class="action-btn" id="btn-play-song" title="Play Favorite Song on All Devices">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M9 18V5l12-2v13"/>
+          <circle cx="6" cy="18" r="3"/>
+          <circle cx="18" cy="16" r="3"/>
+        </svg>
+      </button>
+      <span class="action-label">Play Song</span>
+    </div>
+
+    <!-- Speaker -->
+    <div class="action-btn-wrapper">
+      <button class="action-btn active" id="btn-speaker" title="Speaker Output">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+        </svg>
+      </button>
+      <span class="action-label">Speaker</span>
+    </div>
+
+    <!-- Voice Rec / Push To Talk -->
+    <div class="action-btn-wrapper">
+      <button class="action-btn" id="btn-voice-listen" title="Voice Recognition">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <circle cx="12" cy="12" r="10"/>
+          <circle cx="12" cy="12" r="3" fill="currentColor"/>
+        </svg>
+      </button>
+      <span class="action-label">Voice Listen</span>
+    </div>
+  </div>
+
+  <!-- End Call Button -->
+  <div class="call-footer">
+    <button class="btn-end-call" id="btn-end-call" title="End Call">
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/>
+      </svg>
+    </button>
+  </div>
+
+  <script>
+    // Call duration timer
+    let seconds = 0;
+    const timerEl = document.getElementById("call-timer");
+    setInterval(() => {
+      seconds++;
+      const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+      const ss = String(seconds % 60).padStart(2, "0");
+      timerEl.textContent = `${mm}:${ss}`;
+    }, 1000);
+
+    const statusEl = document.getElementById("status-text");
+
+    // Audio Output Playback
+    function playAudioBase64(b64) {
+      try {
+        const audio = new Audio("data:audio/mp3;base64," + b64);
+        audio.play();
+      } catch (e) {
+        console.error("Audio playback error:", e);
+      }
+    }
+
+    // WebSocket Connection to Ultron
+    const loc = window.location;
+    const wsProto = loc.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${wsProto}//${loc.host}/ws/voice`;
+    let ws = null;
+
+    function connectWS() {
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        statusEl.textContent = "Connected to Ultron Neural Core";
+      };
+      ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          if (msg.type === "audio" && msg.data) {
+            playAudioBase64(msg.data);
+          }
+          if (msg.text) {
+            statusEl.textContent = msg.text;
+          }
+          if (msg.type === "status") {
+            if (msg.state === "speaking") {
+              statusEl.textContent = "Ultron speaking...";
+            }
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      };
+      ws.onclose = () => {
+        statusEl.textContent = "Reconnecting...";
+        setTimeout(connectWS, 2000);
+      };
+    }
+    connectWS();
+
+    function sendCommand(text) {
+      statusEl.textContent = `You: "${text}"`;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "transcript", text: text, isFinal: true }));
+      }
+    }
+
+    // Action button listeners
+    document.getElementById("btn-unlock-screen").addEventListener("click", () => {
+      sendCommand("Can you unlock my screen?");
+    });
+
+    document.getElementById("btn-unlock-devices").addEventListener("click", () => {
+      sendCommand("Do me a unlock all three mobile devices");
+    });
+
+    document.getElementById("btn-play-song").addEventListener("click", () => {
+      sendCommand("Play my favorite song in all three of my devices");
+    });
+
+    // Voice recognition on phone
+    let recognition = null;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = "en-US";
+      
+      recognition.onresult = (event) => {
+        const last = event.results.length - 1;
+        const text = event.results[last][0].transcript.trim();
+        if (text) {
+          sendCommand(text);
+        }
+      };
+      recognition.onerror = (e) => {
+        console.warn("Speech recognition error:", e);
+      };
+      recognition.onend = () => {
+        if (!isMuted) {
+          try { recognition.start(); } catch(e){}
+        }
+      };
+    }
+
+    let isMuted = false;
+    const btnMute = document.getElementById("btn-mute");
+    btnMute.addEventListener("click", () => {
+      isMuted = !isMuted;
+      btnMute.classList.toggle("active", isMuted);
+      if (isMuted) {
+        statusEl.textContent = "Microphone muted";
+        if (recognition) recognition.stop();
+      } else {
+        statusEl.textContent = "Microphone live - listening...";
+        if (recognition) recognition.start();
+      }
+    });
+
+    const btnVoice = document.getElementById("btn-voice-listen");
+    btnVoice.addEventListener("click", () => {
+      if (recognition) {
+        try {
+          recognition.start();
+          btnVoice.classList.add("active");
+          statusEl.textContent = "Listening to your voice...";
+        } catch(e) {
+          recognition.stop();
+          btnVoice.classList.remove("active");
+        }
+      } else {
+        statusEl.textContent = "Speech recognition not supported in this browser.";
+      }
+    });
+
+    // End call button
+    document.getElementById("btn-end-call").addEventListener("click", () => {
+      statusEl.textContent = "Call Ended";
+      if (recognition) recognition.stop();
+      if (ws) ws.close();
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 1000);
+    });
+
+    // Auto-start microphone if supported
+    window.addEventListener("click", () => {
+      if (recognition && !isMuted) {
+        try { recognition.start(); btnVoice.classList.add("active"); } catch(e){}
+      }
+    }, { once: true });
+  </script>
+</body>
+</html>

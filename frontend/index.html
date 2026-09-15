@@ -11,6 +11,12 @@
 
     <!-- Minimal controls — top right -->
     <div id="controls">
+      <button id="btn-matrix-toggle" title="Device Matrix (ADB)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+          <line x1="12" y1="18" x2="12.01" y2="18"/>
+        </svg>
+      </button>
       <button id="btn-subghz" title="Sub-GHz Radio Matrix">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M4.93 4.93a10 10 0 0 1 14.14 0"/>
@@ -125,6 +131,68 @@
       <canvas id="wave"></canvas>
       <div id="ticker"></div>
       <div id="panel-tr"></div>
+    </div>
+
+    <!-- Neural Stack SYSTEM LOCKED Overlay -->
+    <div id="system-lock-overlay" class="locked">
+      <div class="lock-bracket">
+        <div class="lock-bracket-corner tl"></div>
+        <div class="lock-bracket-corner tr"></div>
+        <div class="lock-bracket-corner bl"></div>
+        <div class="lock-bracket-corner br"></div>
+        <div class="lock-icon">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+        <div class="lock-title">SYSTEM LOCKED</div>
+        <div class="lock-subtitle">NEURAL LINK RESTRICTED // AWAITING AUTHORIZATION</div>
+        <div class="lock-hint">Say: <span>"Hi Ultron, can you unlock my screen?"</span></div>
+        <button id="btn-quick-unlock" class="lock-action-btn">OVERRIDE &amp; UNLOCK</button>
+      </div>
+    </div>
+
+    <!-- Neural Stack Multi-Device ADB Matrix Widget -->
+    <div id="device-matrix-hud">
+      <div class="matrix-header">
+        <span class="matrix-dot">●</span> DEVICE MATRIX [ADB]
+        <button id="btn-matrix-minimize" title="Toggle Matrix">─</button>
+      </div>
+      <div id="matrix-devices-list" class="matrix-list">
+        <div class="matrix-card">
+          <div class="matrix-card-top">
+            <span class="dev-name">Device 01 (Pixel)</span>
+            <span class="dev-badge locked">LOCKED</span>
+          </div>
+          <div class="matrix-card-sub">USB-ADB-01 • 🔋 94% • Standby</div>
+        </div>
+        <div class="matrix-card">
+          <div class="matrix-card-top">
+            <span class="dev-name">Device 02 (OnePlus)</span>
+            <span class="dev-badge locked">LOCKED</span>
+          </div>
+          <div class="matrix-card-sub">USB-ADB-02 • 🔋 88% • Standby</div>
+        </div>
+        <div class="matrix-card">
+          <div class="matrix-card-top">
+            <span class="dev-name">Device 03 (Companion)</span>
+            <span class="dev-badge locked">LOCKED</span>
+          </div>
+          <div class="matrix-card-sub">LINK-ADB-03 • 🔋 82% • Standby</div>
+        </div>
+      </div>
+      <div class="matrix-actions">
+        <button id="btn-action-unlock-phones" class="matrix-btn">⚡ UNLOCK 3 DEVICES</button>
+        <button id="btn-action-play-song" class="matrix-btn">🎵 PLAY ON ALL</button>
+        <button id="btn-action-toggle-pc" class="matrix-btn">🔒 TOGGLE SCREEN</button>
+        <a id="btn-action-call-page" href="/call" target="_blank" class="matrix-btn link-btn">📱 COMPANION CALL</a>
+      </div>
+    </div>
+
+    <!-- Live Subtitle Action Banner (Neural Stack Prompts/Responses) -->
+    <div id="action-banner">
+      <div id="action-banner-text">ULTRON ONLINE</div>
     </div>
 
     <div id="status-text"></div>

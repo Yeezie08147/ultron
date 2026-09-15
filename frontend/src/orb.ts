@@ -14,6 +14,7 @@ export interface Orb {
   setState(s: OrbState): void;
   setAnalyser(a: AnalyserNode | null): void;
   getColor(): [number, number, number];   // current smoothly-lerped colour (0-255)
+  setLocked(locked: boolean): void;
   destroy(): void;
 }
 
@@ -135,6 +136,34 @@ export function createOrb(canvas: HTMLCanvasElement): Orb {
   const electrons = new THREE.Points(electronGeo, electronMat);
   scene.add(electrons);
 
+  // ── Floating Golden Embers / Sparks (Neural Stack Molten Core Effect) ──
+  const EMBER_COUNT = 300;
+  const emberGeo = new THREE.BufferGeometry();
+  const emberPos = new Float32Array(EMBER_COUNT * 3);
+  const emberVel = new Float32Array(EMBER_COUNT * 3);
+  const emberLife = new Float32Array(EMBER_COUNT);
+
+  for (let i = 0; i < EMBER_COUNT; i++) {
+    emberPos[i * 3] = (Math.random() - 0.5) * 45;
+    emberPos[i * 3 + 1] = (Math.random() - 0.5) * 45;
+    emberPos[i * 3 + 2] = (Math.random() - 0.5) * 35;
+    emberVel[i * 3] = (Math.random() - 0.5) * 0.06;
+    emberVel[i * 3 + 1] = 0.08 + Math.random() * 0.15; // upward drift
+    emberVel[i * 3 + 2] = (Math.random() - 0.5) * 0.06;
+    emberLife[i] = Math.random();
+  }
+  emberGeo.setAttribute("position", new THREE.BufferAttribute(emberPos, 3));
+  const emberMat = new THREE.PointsMaterial({
+    color: 0xFFAA33,
+    size: 0.65,
+    transparent: true,
+    opacity: 0.2,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const emberPoints = new THREE.Points(emberGeo, emberMat);
+  scene.add(emberPoints);
+
   // Each electron: start point, end point, progress (0-1), speed
   interface Electron { sx: number; sy: number; sz: number; ex: number; ey: number; ez: number; t: number; speed: number; }
   const activeElectrons: Electron[] = [];
@@ -147,6 +176,7 @@ export function createOrb(canvas: HTMLCanvasElement): Orb {
 
   // ── State ──
   let state: OrbState = "idle";
+  let isLocked = true;
   let targetRadius = 25, currentRadius = 25;
   let targetSpeed = 0.3, currentSpeed = 0.3;
   let targetBright = 0.6, currentBright = 0.6;
@@ -434,15 +464,37 @@ export function createOrb(canvas: HTMLCanvasElement): Orb {
     core.scale.setScalar(22 * orbScale);
     coreMat.opacity = 0.16 + (state === "speaking" ? voiceEnv * 0.08 : 0);
 
+    // ── Embers / Sparks Update ──
+    const epArr = (emberGeo.getAttribute("position") as THREE.BufferAttribute).array as Float32Array;
+    for (let i = 0; i < EMBER_COUNT; i++) {
+      const i3 = i * 3;
+      epArr[i3] += emberVel[i3] + Math.sin(t * 2 + i) * 0.02;
+      epArr[i3 + 1] += emberVel[i3 + 1];
+      epArr[i3 + 2] += emberVel[i3 + 2];
+      emberLife[i] += 0.008;
+      if (epArr[i3 + 1] > 35 || emberLife[i] >= 1.0) {
+        epArr[i3] = (Math.random() - 0.5) * 25;
+        epArr[i3 + 1] = -25;
+        epArr[i3 + 2] = (Math.random() - 0.5) * 25;
+        emberLife[i] = 0;
+      }
+    }
+    (emberGeo.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
+    emberMat.opacity = isLocked ? 0.08 : (0.6 + Math.sin(t * 3) * 0.15 + (state === "speaking" ? voiceEnv * 0.2 : 0));
+    emberMat.color.setHex(isLocked ? 0x00E5FF : 0xFFAA33);
+
     // per-state colour — distinct hues, crisper transitions
-    const stateColor =
-      state === "listening" ? 0xFFAA1E :   // green-teal — attentive
-      state === "thinking"  ? 0xDC3C14 :   // gold — processing
-      state === "speaking"  ? 0xFF8C32 :   // royal blue — active
-      state === "alert"     ? 0xC81E1E :   // red — error / alert
-                              0xFF7800;     // bright cyan — idle
+    // When locked: pure cybernetic cyan (Neural Stack State 1)
+    // When unlocked: fiery molten golden-orange (Neural Stack State 2)
+    const stateColor = isLocked ? 0x00E5FF : (
+      state === "listening" ? 0xFFAA1E :   // bright amber
+      state === "thinking"  ? 0xDC3C14 :   // deep red-orange
+      state === "speaking"  ? 0xFF8C32 :   // vibrant molten orange
+      state === "alert"     ? 0xC81E1E :   // crimson alert
+                              0xFF7800      // golden-orange core idle
+    );
     const sc = new THREE.Color(stateColor);
-    // (9) idle colour drift: nudge the cyan a hair warmer/cooler on a slow sine so
+    // (9) idle colour drift: nudge the color a hair warmer/cooler on a slow sine so
     // idle never looks flat. Magnitude ≈0.015 hue — barely perceptible.
     if (state === "idle") {
       sc.getHSL(_hsl);
@@ -482,6 +534,12 @@ export function createOrb(canvas: HTMLCanvasElement): Orb {
     },
     getColor() {
       return [Math.round(mat.color.r * 255), Math.round(mat.color.g * 255), Math.round(mat.color.b * 255)] as [number, number, number];
+    },
+    setLocked(locked: boolean) {
+      if (isLocked !== locked) {
+        isLocked = locked;
+        transitionEnergy = 1.8; // shockwave tumble & burst on transition
+      }
     },
     destroy() {
       destroyed = true;

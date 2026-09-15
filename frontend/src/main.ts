@@ -47,6 +47,50 @@ function updateStatus(state: State) {
 const canvas = document.getElementById("orb-canvas") as HTMLCanvasElement;
 const orb = createOrb(canvas);
 
+// ── Neural Stack Screen & Device Matrix State ──
+let isScreenLocked = true;
+const hudStateEl = document.getElementById("hud-state");
+const actionBannerEl = document.getElementById("action-banner");
+const actionBannerText = document.getElementById("action-banner-text");
+const matrixListEl = document.getElementById("matrix-devices-list");
+
+function setActionBanner(text: string) {
+  if (actionBannerText) actionBannerText.textContent = text;
+  if (actionBannerEl) {
+    actionBannerEl.style.opacity = "1";
+    setTimeout(() => {
+      if (actionBannerEl) actionBannerEl.style.opacity = "0.75";
+    }, 4000);
+  }
+}
+
+function updateScreenLockUI(locked: boolean) {
+  isScreenLocked = locked;
+  document.body.setAttribute("data-screen", locked ? "locked" : "unlocked");
+  orb.setLocked(locked);
+  if (hudStateEl) hudStateEl.textContent = locked ? "SYSTEM LOCKED" : "ONLINE";
+  setActionBanner(locked ? "SYSTEM LOCKED" : "SYSTEM UNLOCKED // ULTRON ACTIVE");
+}
+
+function renderDeviceMatrix(devices: any[]) {
+  if (!matrixListEl || !Array.isArray(devices)) return;
+  matrixListEl.innerHTML = devices.map((d: any) => {
+    const isDevLocked = d.status === "LOCKED";
+    const badgeClass = isDevLocked ? "locked" : "unlocked";
+    const bat = d.battery ? `🔋 ${d.battery}%` : "🔋 --";
+    const media = d.media && d.media !== "Standby" ? ` • ${d.media}` : "";
+    return `
+      <div class="matrix-card">
+        <div class="matrix-card-top">
+          <span class="dev-name">${d.name || "Device"}</span>
+          <span class="dev-badge ${badgeClass}">${d.status}</span>
+        </div>
+        <div class="matrix-card-sub">${d.serial || "ADB"} • ${bat}${media}</div>
+      </div>
+    `;
+  }).join("");
+}
+
 const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
 const WS_URL = `${wsProto}//${window.location.host}/ws/voice`;
 const socket = createSocket(WS_URL);
@@ -108,7 +152,11 @@ audioPlayer.onFinished(() => {
 socket.onMessage((msg) => {
   const type = msg.type as string;
 
-  if (type === "audio") {
+  if (type === "screen_state") {
+    updateScreenLockUI(!!msg.locked);
+  } else if (type === "device_matrix_update") {
+    renderDeviceMatrix(msg.devices as any[]);
+  } else if (type === "audio") {
     const audioData = msg.data as string;
     console.log("[audio] received", audioData ? `${audioData.length} chars` : "EMPTY", "state:", currentState);
     if (audioData) {
@@ -125,6 +173,9 @@ socket.onMessage((msg) => {
     const txt = String(msg.text || "");
     if (txt) {
       console.log("[ULTRON]", txt);
+      setActionBanner(txt);
+      const captionEl = document.getElementById("caption");
+      if (captionEl) captionEl.textContent = txt;
       if (subGhzLogConsole && (txt.includes("Sub-GHz") || txt.includes("RF") || txt.includes("NFC") || txt.includes("RFID") || txt.includes("Infrared") || txt.includes("iButton") || txt.includes("MHz") || txt.includes("BadUSB"))) {
         subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] ${txt}`;
       }
@@ -144,6 +195,11 @@ socket.onMessage((msg) => {
     // Text fallback when TTS fails
     const txt = String(msg.text || "");
     console.log("[ULTRON]", txt);
+    if (txt) {
+      setActionBanner(txt);
+      const captionEl = document.getElementById("caption");
+      if (captionEl) captionEl.textContent = txt;
+    }
     if (subGhzLogConsole && txt && (txt.includes("Sub-GHz") || txt.includes("RF") || txt.includes("NFC") || txt.includes("RFID") || txt.includes("Infrared") || txt.includes("iButton") || txt.includes("MHz") || txt.includes("BadUSB"))) {
       subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] ${txt}`;
     }
@@ -307,3 +363,83 @@ btnSettings.addEventListener("click", (e) => {
 setTimeout(() => {
   checkFirstTimeSetup();
 }, 2000);
+
+// ---------------------------------------------------------------------------
+// Chat Input & Neural Stack Buttons
+// ---------------------------------------------------------------------------
+
+const chatInput = document.getElementById("chat-input") as HTMLInputElement | null;
+chatInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && chatInput.value.trim()) {
+    const text = chatInput.value.trim();
+    chatInput.value = "";
+    audioPlayer.stop();
+    socket.send({ type: "chat", text });
+    transition("thinking");
+    setActionBanner(text);
+  }
+});
+
+const btnQuickUnlock = document.getElementById("btn-quick-unlock");
+const btnMatrixToggle = document.getElementById("btn-matrix-toggle");
+const btnMatrixMinimize = document.getElementById("btn-matrix-minimize");
+const deviceMatrixHud = document.getElementById("device-matrix-hud");
+const btnActionUnlockPhones = document.getElementById("btn-action-unlock-phones");
+const btnActionPlaySong = document.getElementById("btn-action-play-song");
+const btnActionTogglePc = document.getElementById("btn-action-toggle-pc");
+
+btnQuickUnlock?.addEventListener("click", () => {
+  setActionBanner("Unlocking screen...");
+  socket.send({ type: "chat", text: "unlock my screen" });
+});
+
+btnMatrixToggle?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (deviceMatrixHud) {
+    deviceMatrixHud.style.display = deviceMatrixHud.style.display === "none" ? "block" : "none";
+  }
+});
+
+btnMatrixMinimize?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  deviceMatrixHud?.classList.toggle("minimized");
+});
+
+btnActionUnlockPhones?.addEventListener("click", () => {
+  setActionBanner("Unlocking all 3 mobile devices...");
+  socket.send({ type: "chat", text: "unlock all three mobile devices" });
+});
+
+btnActionPlaySong?.addEventListener("click", () => {
+  setActionBanner("Playing favorite song on all devices...");
+  socket.send({ type: "chat", text: "play my favorite song in all three of my devices" });
+});
+
+btnActionTogglePc?.addEventListener("click", () => {
+  if (isScreenLocked) {
+    setActionBanner("Unlocking screen...");
+    socket.send({ type: "chat", text: "unlock my screen" });
+  } else {
+    setActionBanner("Locking screen...");
+    socket.send({ type: "chat", text: "lock my screen" });
+  }
+});
+
+// Initial fetch for screen state & devices
+async function initNeuralStackState() {
+  try {
+    const sRes = await fetch("/api/screen/state");
+    if (sRes.ok) {
+      const sData = await sRes.json();
+      updateScreenLockUI(!!sData.locked);
+    }
+    const dRes = await fetch("/api/devices");
+    if (dRes.ok) {
+      const dData = await dRes.json();
+      renderDeviceMatrix(dData.devices || []);
+    }
+  } catch (e) {
+    console.warn("Failed to fetch initial device/screen state", e);
+  }
+}
+initNeuralStackState();
