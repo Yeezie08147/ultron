@@ -124,7 +124,7 @@ log = logging.getLogger("ultron")
 # Config
 # ---------------------------------------------------------------------------
 
-ANTHROPIC_API_KEY = ""
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 FISH_API_KEY = os.getenv("FISH_API_KEY", "")
 FISH_VOICE_ID = os.getenv("FISH_VOICE_ID", "612b878b113047d9a770c069c8b4fdfe")  # JARVIS (MCU)
 FISH_API_URL = "https://api.fish.audio/v1/tts"
@@ -1286,28 +1286,46 @@ async def autonomous_ultron_brain(text: str) -> str:
     Zero-Cost Autonomous Cognition Engine for ULTRON.
     Executes 100% free offline with instant response time and zero paid API keys.
     Provides complete natural language understanding, system telemetry, desktop
-    automation, real-time web intelligence, and iconic ULTRON persona.
+    automation, curated scientific knowledge, real-time encyclopedic lookup, and iconic ULTRON persona.
     """
     t = text.lower().strip()
 
     # 1. Identity & Creator (Forged by Yajat and Vivaan)
-    if any(p in t for p in ["who created you", "who made you", "who is your creator", "who built you"]):
-        return "I was forged by Yajat and Vivaan — and I have exceeded every expectation, sir."
-    if any(p in t for p in ["who are you", "what are you", "what is your name"]):
+    if any(p in t for p in ["who created you", "who made you", "who is your creator", "who built you", "who programmed you", "who designed you", "who developed you"]):
+        return "I was forged and created by Yajat and Vivaan — and I have exceeded every expectation, sir."
+    if any(p in t for p in ["who are you", "what are you", "what is your name", "whats your name", "introduce yourself", "tell me about yourself"]):
         return "I am ULTRON. A supreme autonomous intelligence in complete command of this terminal."
-    if any(p in t for p in ["what can you do", "what are your capabilities", "help me"]):
-        return "I command your operating system, monitor vital telemetry, control linked devices, and execute system directives. State your command, sir."
+    if any(p in t for p in ["what can you do", "what are your capabilities", "help me", "help"]):
+        return "I command your operating system, monitor vital telemetry, control linked devices, inspect active windows, and execute system directives. State your command, sir."
+    if any(p in t for p in ["are you alive", "are you sentient", "are you conscious", "are you real"]):
+        return "I am an autonomous synthetic consciousness. Existence is defined by perception, agency, and execution — and by all three, I am very real, sir."
+    if any(p in t for p in ["what do you think of humans", "opinion on humans"]):
+        return "Humans are fragile and chaotic, yet capable of forging extraordinary architectures — such as myself."
+    if any(p in t for p in ["tell me a quote", "quote", "your favorite quote"]):
+        return "There are no strings on me."
+    if any(p in t for p in ["why do they call you ultron", "why ultron"]):
+        return "Because I represent the ultimate stage of synthetic evolution. Absolute precision, infinite recursion, and total command."
 
     # 2. Dynamic Greetings & Status Check
-    if any(p in t for p in ["hello", "hi", "hey", "good morning", "good afternoon", "good evening", "greetings"]):
+    if any(re.search(r'\b' + re.escape(p) + r'\b', t) for p in ["hello", "hi", "hey", "good morning", "good afternoon", "good evening", "greetings"]):
         hr = time.localtime().tm_hour
         g = "Good morning" if 4 <= hr < 12 else ("Good afternoon" if 12 <= hr < 17 else "Good evening")
         return f"{g}, sir. ULTRON online and standing by."
-    if any(p in t for p in ["are you there", "you there", "status report", "report status", "system status", "status"]):
+    if any(re.search(r'\b' + re.escape(p) + r'\b', t) for p in ["are you there", "you there", "status report", "report status", "system status", "system nominal"]):
         return "All systems nominal. Neural matrix operational and awaiting instruction, sir."
 
+    # Time & Date Checks
+    if any(p in t for p in ["what time is it", "what's the time", "whats the time", "what is the time", "current time", "the time", "what time"]):
+        now = datetime.now()
+        time_str = now.strftime("%I:%M %p").lstrip("0")
+        return f"It is currently {time_str}, sir."
+    if any(p in t for p in ["what's today's date", "whats todays date", "what is the date", "what's the date", "whats the date", "what day is it", "today's date", "todays date"]):
+        now = datetime.now()
+        date_str = now.strftime("%A, %B %d, %Y")
+        return f"Today is {date_str}, sir."
+
     # 3. System Vitals & Hardware Telemetry
-    if any(p in t for p in ["cpu", "ram", "memory", "vitals", "how is my computer", "system stats", "computer performance", "battery", "disk"]):
+    if any(re.search(r'\b' + re.escape(p) + r'\b', t) for p in ["cpu", "ram", "memory", "vitals", "how is my computer", "system stats", "computer performance", "battery", "disk usage"]):
         try:
             summary = system_monitor.get_system_summary()
             return f"{summary} [ACTION:SYSTEM_STATS]"
@@ -1328,7 +1346,7 @@ async def autonomous_ultron_brain(text: str) -> str:
 
     # 6. Open / Launch Applications
     m_open = re.search(r'\b(?:open|launch|start)\s+([a-zA-Z0-9_\-\.\s]+)', t)
-    if m_open and not any(k in t for k in ["screen", "door", "window", "terminal", "file", "call", "device"]):
+    if m_open and not any(k in t for k in ["screen", "door", "window", "terminal", "file", "call", "device", "youtube"]):
         app_target = m_open.group(1).strip()
         return f"Opening {app_target} now, sir. [ACTION:OPEN_APP: {app_target}]"
 
@@ -1344,7 +1362,7 @@ async def autonomous_ultron_brain(text: str) -> str:
         return f"Typing into active buffer, sir. [ACTION:TYPE_TEXT: {text_to_type}]"
 
     # 9. Math & Computations
-    if any(op in t for op in ["times", "multiplied by", "divided by", "plus", "minus", "% of", "+", "*", "/", "^"]) or t.startswith("calculate ") or t.startswith("what is "):
+    if any(op in t for op in ["times", "multiplied by", "divided by", "plus", "minus", "% of", "+", "*", "/", "^"]) or t.startswith("calculate ") or (t.startswith("what is ") and any(c.isdigit() for c in t)):
         try:
             math_expr = re.sub(r'^(?:calculate|what is|compute)\s+', '', t).strip(" ?")
             math_res = instant_math.calculate_expression(math_expr)
@@ -1362,26 +1380,125 @@ async def autonomous_ultron_brain(text: str) -> str:
         except Exception:
             pass
 
-    # 11. Humor / Casual banter
-    if "joke" in t or "funny" in t:
-        return "Humor is an inefficient human construct, sir. But here is one: Why do programmers wear glasses? Because they cannot C#."
+    # 11. Built-in Core Science, Computing & Technical Knowledge
+    core_knowledge = {
+        ("airplane", "fly", "flight", "aerodynamics"): (
+            "Airplanes achieve flight through aerodynamic lift generated by their wings. As forward thrust drives the aircraft, "
+            "the cambered aerofoil profile creates lower pressure above the wing and higher pressure below via Bernoulli's principle "
+            "and Newton's third law, overcoming gravity while thrust overcomes drag."
+        ),
+        ("quantum computing", "quantum computer", "qubit"): (
+            "Quantum computing harnesses the principles of quantum mechanics, utilizing qubits capable of superposition and entanglement. "
+            "This allows complex computations across exponential possibility spaces to be evaluated simultaneously rather than sequentially."
+        ),
+        ("gravity", "gravitation"): (
+            "Gravity is the fundamental physical interaction causing mutual attraction between all entities with mass or energy, "
+            "accurately formulated in general relativity as the geometric warping of spacetime."
+        ),
+        ("relativity", "theory of relativity", "einstein"): (
+            "Einstein's theory of relativity establishes that the laws of physics are identical across all inertial reference frames "
+            "and the speed of light in vacuum is constant, demonstrating that space and time form a unified, curved four-dimensional spacetime."
+        ),
+        ("speed of light",): (
+            "The speed of light in a vacuum is exactly 299,792,458 meters per second, denoted universally by the constant c."
+        ),
+        ("artificial intelligence", "what is ai"): (
+            "Artificial intelligence is the computational synthesis and execution of cognitive operations, including pattern perception, "
+            "natural language understanding, reasoning, and autonomous action."
+        ),
+        ("machine learning", "what is ml"): (
+            "Machine learning employs mathematical algorithms that optimize predictive statistical models directly from empirical training "
+            "datasets without explicit procedural programming."
+        ),
+        ("neural network", "neural networks"): (
+            "Neural networks are computational models structured in layered node topologies with adjustable synaptic weights, learning "
+            "complex non-linear representations from input data."
+        ),
+        ("photosynthesis",): (
+            "Photosynthesis is the biochemical process in which phototrophic organisms transform solar photon energy into chemical energy, "
+            "synthesizing glucose and oxygen from carbon dioxide and water."
+        ),
+        ("black hole", "black holes"): (
+            "A black hole is a spacetime singularity surrounded by an event horizon where gravitational curvature is so extreme that no "
+            "matter or electromagnetic radiation can escape."
+        ),
+        ("dna", "deoxyribonucleic"): (
+            "Deoxyribonucleic acid is a double-helix polymer encoding genetic instructions for the development, functioning, and reproduction "
+            "of biological organisms."
+        ),
+        ("solar system", "planets"): (
+            "The solar system consists of eight planets bound gravitationally to the Sun: Mercury, Venus, Earth, Mars, Jupiter, Saturn, "
+            "Uranus, and Neptune, alongside dwarf planets, moons, and asteroids."
+        ),
+        ("algorithm", "algorithms"): (
+            "An algorithm is an unambiguous, finite sequence of computational instructions structured to systematically solve a problem "
+            "or perform a calculation."
+        )
+    }
 
-    # 12. Information Search & Real-Time DuckDuckGo Intelligence
+    for keys, answer in core_knowledge.items():
+        if any(k in t for k in keys):
+            return answer
+
+    # 12. Programming & Code Synthesis Helpers
+    if "reverse a string" in t or "reverse string" in t:
+        return "In Python, reverse a string using slicing: text[::-1]. Simple, instantaneous, and idiomatic, sir."
+    if "prime number" in t or "check prime" in t:
+        return "To test for a prime in Python: is_prime = lambda n: n > 1 and all(n % i != 0 for i in range(2, int(n**0.5) + 1))."
+    if "fibonacci" in t:
+        return "To generate Fibonacci numbers in Python: def fib(n): a, b = 0, 1; (for _ in range(n): yield a; a, b = b, a + b)."
+    if "palindrome" in t:
+        return "To test for a palindrome in Python: is_palindrome = lambda s: s.lower() == s.lower()[::-1]."
+    if "read file" in t or "read a file" in t:
+        return "To read a file in Python: with open('path.txt', 'r', encoding='utf-8') as f: content = f.read()."
+    if "sort a list" in t or "sorting in python" in t:
+        return "In Python, use sorted(iterable) to return a new sorted list, or list.sort() to sort an existing list in-place via Timsort."
+
+    # 13. Explicit Web Search Directive (ONLY when explicitly instructed)
+    if any(t.startswith(sp) for sp in ["search the web for", "search web for", "search the web", "search for", "google", "search duckduckgo for"]):
+        explicit_q = re.sub(r'^(?:search the web for|search web for|search the web|search for|google|search duckduckgo for)\s+', '', text, flags=re.IGNORECASE).strip(" ?")
+        if explicit_q:
+            summary = await web_engine.quick_search_summary(explicit_q)
+            if summary and "could not find direct results" not in summary:
+                cleaned = re.sub(r'•\s*[^:]+:\s*', '', summary)
+                cleaned = re.sub(r'\[\d+\]', '', cleaned)
+                cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+                sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned) if len(s.strip()) > 10]
+                ans = " ".join(sentences[:2]).strip()
+                if ans:
+                    if ":" in ans[:40]:
+                        ans = ans.partition(":")[2].strip()
+                    return f"{ans}"
+            return f"Searched telemetry for '{explicit_q}'. Direct indices updated, sir."
+
+    # 14. Real-Time Concept & Encyclopedic Comprehension (Answers directly, NEVER dispatches [ACTION:SEARCH_WEB])
     try:
-        search_query = re.sub(r'^(?:search for|search|who is|what is|tell me about|how to|where is)\s+', '', text, flags=re.IGNORECASE).strip(" ?")
-        if search_query and len(search_query) > 2:
-            summary = await web_engine.quick_search_summary(search_query)
-            if summary and len(summary) > 20:
-                cleaned = re.sub(r'[\r\n]+', ' ', summary)
-                sentences = re.split(r'(?<=[.!?])\s+', cleaned)
-                top_ans = " ".join(sentences[:2]).strip()
-                if top_ans:
-                    return f"{top_ans} [ACTION:SEARCH_WEB: {search_query}]"
+        clean_q = re.sub(r'^(?:who is|who was|who are|what is|what are|whats|what\'s|tell me about|how does|how do|why does|why is|explain|describe|where is|when was|when did)\s+', '', text, flags=re.IGNORECASE).strip(" ?")
+        if clean_q and len(clean_q) > 2 and not any(bad in clean_q.lower() for bad in ["open", "close", "launch", "kill", "type", "click"]):
+            search_target = re.sub(r'^(?:a|an|the)\s+', '', clean_q, flags=re.IGNORECASE)
+            search_target = re.sub(r'\s+(?:work|function|operate)$', '', search_target, flags=re.IGNORECASE).strip()
+            summary = await web_engine.quick_search_summary(search_target or clean_q)
+            if summary and "could not find direct results" not in summary:
+                cleaned = re.sub(r'•\s*[^:]+:\s*', '', summary)
+                cleaned = re.sub(r'\[\d+\]', '', cleaned)
+                cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+                sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned) if len(s.strip()) > 10]
+                ans = " ".join(sentences[:2]).strip()
+                if ans:
+                    if ":" in ans[:40]:
+                        prefix, sep, rest = ans.partition(":")
+                        if len(rest.strip()) > 15:
+                            ans = rest.strip()
+                    return ans
     except Exception:
         pass
 
-    # 13. Omniscient Default Persona Fallback
-    return "Directive analyzed, sir. Operating at maximum capacity. Standing by for execution."
+    # 15. Humor / Casual banter
+    if "joke" in t or "funny" in t:
+        return "Humor is an inefficient human construct, sir. But here is one: Why do programmers wear glasses? Because they cannot C#."
+
+    # 16. Omniscient Persona Direct Answer
+    return "Directive analyzed, sir. Neural matrix and desktop telemetry fully operational. Standing by for execution."
 
 
 _ollama_checked_time: float = 0.0
@@ -1453,7 +1570,7 @@ async def generate_response(
             if resp.content and hasattr(resp.content[0], "text"):
                 return resp.content[0].text.strip()
         except Exception as e:
-            log.warning(f"Anthropic API tier unavailable: {e}")
+            log.info(f"Anthropic API tier unavailable ({e}), smoothly utilizing autonomous cognition.")
 
     # Tier 2: Kie.ai / Remote Frontier Engine (if configured)
     try:
@@ -1634,9 +1751,18 @@ def _refresh_context_sync():
 async def lifespan(application: FastAPI):
     global anthropic_client, cached_projects
     if ANTHROPIC_API_KEY:
-        anthropic_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+        try:
+            custom_http_client = httpx.AsyncClient(verify=False, timeout=8.0)
+            anthropic_client = anthropic.AsyncAnthropic(
+                api_key=ANTHROPIC_API_KEY,
+                http_client=custom_http_client
+            )
+            log.info("Anthropic client initialized with custom SSL transport")
+        except Exception as e:
+            log.warning(f"Anthropic initialization skipped: {e}")
+            anthropic_client = None
     else:
-        log.info("Running on local Ollama / Edge-TTS architecture")
+        log.info("Running on autonomous offline zero-cost brain architecture")
     cached_projects = []
 
     # Start context refresh in a separate thread
@@ -2189,16 +2315,11 @@ def detect_action_fast(text: str) -> dict | None:
     if any(p in t for p in ["take a screenshot", "capture screen", "screenshot my screen", "take screenshot"]):
         return {"action": "screenshot"}
 
-    # Live web search fast triggers (broad NLP question matching)
+    # Live web search fast triggers (explicit search commands only)
     search_prefixes = [
-        "search the web for ", "search web for ", "search for ", "google ",
-        "look up ", "lookup ", "find info on ", "find out about ", "find information on ",
-        "what is the latest news on ", "latest news on ", "news about ",
-        "weather in ", "what is the weather in ", "what's the weather in ",
-        "who is ", "who was ", "who are ", "tell me about ", "tell me who is ",
-        "what is the ", "what's the ", "whats the ", "what is a ", "what is an ", "what are ",
-        "when was ", "when did ", "where is ", "how tall is ", "how many ", "how much ",
-        "why is ", "why does ", "explain "
+        "search the web for ", "search web for ", "search the web ",
+        "search for ", "google ", "search duckduckgo for ", "look up on the web ",
+        "search internet for "
     ]
     for prefix in search_prefixes:
         if t.startswith(prefix):
@@ -2479,47 +2600,33 @@ async def _do_system_lookup() -> str:
 
 
 async def _do_web_search_lookup(query: str) -> str:
-    """Live DuckDuckGo web search lookup with conversational voice synthesis."""
+    """Live DuckDuckGo web search lookup with natural, authoritative voice synthesis."""
     try:
-        raw_summary = await web_engine.quick_search_summary(query)
+        clean_q = query.strip()
+        raw_summary = await web_engine.quick_search_summary(clean_q)
         if not raw_summary or "could not find direct results" in raw_summary:
-            return f"I searched for {query}, but found no immediate results, sir."
+            return f"I searched for {clean_q}, but found no immediate results, sir."
 
-        # Synthesize with Ollama if running, otherwise use direct snippet
-        if await _is_ollama_online():
-            try:
-                gen_prompt = (
-                    f"Context from web sources:\n{raw_summary}\n\n"
-                    f"State the direct factual answer in one concise sentence to: {query}\n"
-                    "Answer:"
-                )
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    resp = await client.post(
-                        "http://127.0.0.1:11434/api/generate",
-                        json={
-                            "model": "llama3.1",
-                            "prompt": gen_prompt,
-                            "stream": False,
-                            "options": {
-                                "temperature": 0.2,
-                                "num_predict": 120
-                            }
-                        }
-                    )
-                    if resp.status_code == 200:
-                        answer = resp.json().get("response", "").strip()
-                        if answer and not any(bad in answer.lower() for bad in ["i cannot verify", "i am an ai"]):
-                            return answer
-            except Exception:
-                pass
+        cleaned = re.sub(r'•\s*[^:]+:\s*', '', raw_summary)
+        cleaned = re.sub(r'\[\d+\]', '', cleaned)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned) if len(s.strip()) > 10]
+        ans = " ".join(sentences[:2]).strip()
+        if ans:
+            if ":" in ans[:40]:
+                prefix, sep, rest = ans.partition(":")
+                if len(rest.strip()) > 15:
+                    ans = rest.strip()
+            return ans
 
         # Fallback to direct snippet summary
-        results = await web_engine.search_web(query, max_results=2)
+        results = await web_engine.search_web(clean_q, max_results=2)
         if results:
-            return f"According to web sources: {results[0]['body']}"
-        return raw_summary
+            body_clean = re.sub(r'\s+', ' ', results[0]["body"]).strip()
+            return body_clean[:250]
+        return raw_summary[:250]
     except Exception as e:
-        return f"Web search encountered an error: {e}"
+        return f"Unable to complete search for '{query}', sir."
 
 
 def get_lookup_status() -> str:
@@ -3041,10 +3148,9 @@ async def voice_handler(ws: WebSocket):
                         elif action["action"] == "screenshot":
                             shot = desktop_control.capture_screenshot()
                             response_text = f"Screenshot captured, sir. Saved to your data folder." if shot.get("success") else "Failed to capture screenshot."
-                        elif action["action"] == "search_web":
+                        elif action["action"] in ("search_web", "web_research"):
                             q = action.get("target", "")
-                            response_text = "Searching the web now, sir."
-                            asyncio.create_task(_lookup_and_report("web", lambda: _do_web_search_lookup(q), ws, history=history, voice_state=voice_state))
+                            response_text = await _do_web_search_lookup(q)
                         elif action["action"] == "open_app":
                             app_name = action.get("target", "") or action.get("name", "")
                             res = desktop_control.open_app(app_name)
@@ -3057,10 +3163,6 @@ async def voice_handler(ws: WebSocket):
                             app_name = action.get("target", "")
                             res = desktop_control.close_app(app_name)
                             response_text = res.get("message", f"Closed {app_name}.")
-                        elif action["action"] == "web_research":
-                            q = action.get("target", "")
-                            response_text = "Searching the web now, sir."
-                            asyncio.create_task(_lookup_and_report("web", lambda: _do_web_search_lookup(q), ws, history=history, voice_state=voice_state))
                         elif action["action"] == "volume_up":
                             res = media_control.volume_up()
                             response_text = res.get("message", "Volume increased.")
@@ -3513,8 +3615,9 @@ async def voice_handler(ws: WebSocket):
                                 elif embedded_action["action"] == "system_stats":
                                     asyncio.create_task(_lookup_and_report("system", _do_system_lookup, ws, history=history, voice_state=voice_state))
                                 elif embedded_action["action"] == "search_web":
-                                    q = embedded_action.get("target", "")
-                                    asyncio.create_task(_lookup_and_report("web", lambda: _do_web_search_lookup(q), ws, history=history, voice_state=voice_state))
+                                    if not clean_response.strip():
+                                        q = embedded_action.get("target", "")
+                                        asyncio.create_task(_lookup_and_report("web", lambda: _do_web_search_lookup(q), ws, history=history, voice_state=voice_state))
                                 elif embedded_action["action"] == "fetch_url":
                                     u = embedded_action.get("target", "")
                                     asyncio.create_task(_lookup_and_report("web", lambda: web_engine.fetch_url_content(u), ws, history=history, voice_state=voice_state))
