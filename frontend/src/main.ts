@@ -79,15 +79,21 @@ function renderDeviceMatrix(devices: any[]) {
       <div class="matrix-empty">
         <div class="matrix-empty-icon">📱</div>
         <div class="matrix-empty-title">NO DEVICES CONNECTED</div>
-        <div class="matrix-empty-sub">Connect Android phone via USB (with USB Debugging) to link with ULTRON</div>
+        <div class="matrix-empty-sub">Connect Android phone via USB (with USB Debugging) or Bluetooth to link with ULTRON</div>
       </div>
     `;
     return;
   }
   matrixListEl.innerHTML = devices.map((d: any) => {
-    const isDevLocked = d.status === "LOCKED";
-    const badgeClass = isDevLocked ? "locked" : "unlocked";
-    const bat = d.battery ? `🔋 ${d.battery}%` : "🔋 --";
+    let badgeClass = "unlocked";
+    const st = String(d.status || "").toUpperCase();
+    if (st === "LOCKED") badgeClass = "locked";
+    else if (st === "UNLOCKED") badgeClass = "unlocked";
+    else if (st.includes("UNAUTHORIZED") || st.includes("ALLOW") || st.includes("ENABLE")) badgeClass = "warning";
+    else if (st.includes("BLUETOOTH")) badgeClass = "bluetooth";
+    else if (st.includes("OFFLINE")) badgeClass = "offline";
+
+    const bat = d.battery ? `🔋 ${d.battery}%` : (d.connection === "bluetooth" ? "📶 Bluetooth" : "🔋 --");
     const media = d.media && d.media !== "Standby" ? ` • ${d.media}` : "";
     return `
       <div class="matrix-card">
@@ -95,7 +101,7 @@ function renderDeviceMatrix(devices: any[]) {
           <span class="dev-name">${d.name || "Device"}</span>
           <span class="dev-badge ${badgeClass}">${d.status}</span>
         </div>
-        <div class="matrix-card-sub">${d.serial || "ADB"} • ${bat}${media}</div>
+        <div class="matrix-card-sub">${d.serial || "DEVICE"} • ${bat}${media}</div>
       </div>
     `;
   }).join("");

@@ -1919,13 +1919,39 @@ def detect_action_fast(text: str) -> dict | None:
     ]):
         return {"action": "lock_screen"}
 
+    # ── ULTRON Mobile Phone & Multi-Device Unlock Triggers ──
     if any(p in t for p in [
+        "unlock phone", "unlock my phone", "unlock the phone", "unlock mobile", "unlock my mobile",
+        "unlock device", "unlock devices", "unlock all devices", "unlock android", "unlock samsung",
+        "unlock screen on phone", "unlock phone screen", "unlock mobile devices", "unlock all mobile devices",
         "unlock all three mobile devices", "unlock all three devices", "unlock all 3 mobile devices",
         "unlock all 3 devices", "unlock three mobile devices", "unlock 3 mobile devices",
-        "unlock all mobile devices", "unlock mobile devices", "unlock all devices",
         "unlock all my phones", "unlock my phones", "unlock the phones", "unlock three devices"
     ]):
-        return {"action": "unlock_all_devices"}
+        pin_match = re.search(r'\b(?:pin|code|passcode|with pin|with code|with)\s+([0-9]{4,8})\b', t)
+        pin_val = pin_match.group(1) if pin_match else ""
+        return {"action": "device_unlock_all", "pin": pin_val}
+
+    # ── Mobile Phone Lock Triggers ──
+    if any(p in t for p in [
+        "lock phone", "lock my phone", "lock the phone", "lock mobile", "lock my mobile",
+        "lock device", "lock devices", "lock all devices", "lock android", "lock samsung",
+        "lock phone screen", "turn off phone screen", "turn off phone", "sleep phone"
+    ]):
+        return {"action": "device_lock_all"}
+
+    # ── Mobile Phone Battery Telemetry ──
+    if any(p in t for p in [
+        "phone battery", "my phone battery", "check phone battery", "check battery on phone",
+        "what is my phone battery", "phone battery percentage", "phone battery level",
+        "device battery", "check mobile battery", "mobile battery"
+    ]):
+        return {"action": "phone_battery"}
+
+    # ── Mobile Phone App Launcher ──
+    app_match = re.search(r'open\s+(youtube|spotify|whatsapp|camera|settings|chrome)\s+(?:on|in)\s+(?:my\s+)?(?:phone|device|mobile)', t)
+    if app_match:
+        return {"action": "device_open_app", "app": app_match.group(1)}
 
     if any(p in t for p in [
         "play my favorite song in all three of my devices", "play favorite song in all three of my devices",
@@ -2244,9 +2270,7 @@ def detect_action_fast(text: str) -> dict | None:
         g = "Good morning, sir." if 4 <= hr < 12 else ("Good afternoon, sir." if 12 <= hr < 17 else "Good evening, sir.")
         return {"action": "speak_direct", "text": f"{g} Systems fully online and responding. I am here and at your command."}
 
-    # Android Multi-Device Control (ADB)
-    if any(p in t for p in ["unlock phone", "unlock my phone", "unlock the phone", "unlock device", "unlock devices", "unlock all devices", "unlock android"]):
-        return {"action": "device_unlock_all"}
+    # Android Media Control (ADB)
     if any(p in t for p in ["pause phone", "pause music on phone", "stop phone media"]):
         return {"action": "device_pause_all"}
     if t.startswith("play on phone ") or t.startswith("play on my phone "):
@@ -2930,8 +2954,12 @@ async def voice_handler(ws: WebSocket):
                     _SCREEN_STATE["locked"] = True
                     await ws.send_json({"type": "screen_state", "locked": True})
                     continue
-                elif act_name == "unlock_all_devices":
-                    await device_control.unlock_all_three()
+                elif act_name in ("unlock_all_devices", "device_unlock_all"):
+                    await device_control.unlock_all(pin=msg.get("pin", ""))
+                    await ws.send_json({"type": "device_matrix_update", "devices": device_control.get_device_matrix()})
+                    continue
+                elif act_name == "device_lock_all":
+                    await device_control.lock_all()
                     await ws.send_json({"type": "device_matrix_update", "devices": device_control.get_device_matrix()})
                     continue
                 elif act_name == "play_favorite_all":
@@ -3464,17 +3492,31 @@ async def voice_handler(ws: WebSocket):
                             _SCREEN_STATE["locked"] = True
                             await ws.send_json({"type": "screen_state", "locked": True})
                             response_text = "System locked."
-                        elif action["action"] == "unlock_all_devices":
-                            res = await device_control.unlock_all_three()
+                        elif action["action"] in ("unlock_all_devices", "device_unlock_all"):
+                            pin = action.get("pin", "")
+                            res = await device_control.unlock_all(pin=pin)
                             await ws.send_json({"type": "device_matrix_update", "devices": device_control.get_device_matrix()})
-                            response_text = res.get("message", "Checking. One second. All three got unlocked.")
+                            response_text = res.get("message", "Device unlocked, sir.")
+                        elif action["action"] == "device_lock_all":
+                            res = await device_control.lock_all()
+                            await ws.send_json({"type": "device_matrix_update", "devices": device_control.get_device_matrix()})
+                            response_text = res.get("message", "Screen locked, sir.")
+                        elif action["action"] == "phone_battery":
+                            res = await device_control.get_battery_status()
+                            response_text = res.get("message", "Battery telemetry reported.")
+                        elif action["action"] == "device_open_app":
+                            app_name = action.get("app", "youtube")
+                            serials = device_control.discover_devices()
+                            if serials:
+                                for s in serials:
+                                    device_control.open_app_on_device(s, app_name)
+                                response_text = f"Opening {app_name.capitalize()} on your phone, sir."
+                            else:
+                                response_text = f"Cannot launch {app_name.capitalize()}. Connect phone via USB with USB Debugging enabled, sir."
                         elif action["action"] == "play_favorite_all":
                             res = await device_control.play_favorite_song_all("Back in Black AC/DC")
                             await ws.send_json({"type": "device_matrix_update", "devices": device_control.get_device_matrix()})
                             response_text = res.get("message", "Playing.")
-                        elif action["action"] == "device_unlock_all":
-                            res = await device_control.unlock_all()
-                            response_text = res.get("message", "Devices unlocked.")
                         elif action["action"] == "device_pause_all":
                             res = await device_control.pause_all()
                             response_text = res.get("message", "Devices paused.")
@@ -3946,8 +3988,19 @@ async def api_get_devices():
     return {"devices": device_control.get_device_matrix()}
 
 @app.post("/api/devices/unlock")
-async def api_unlock_devices():
-    res = await device_control.unlock_all_three()
+async def api_unlock_devices(payload: dict = None):
+    pin = (payload or {}).get("pin", "")
+    res = await device_control.unlock_all(pin=pin)
+    return res
+
+@app.post("/api/devices/lock")
+async def api_lock_devices():
+    res = await device_control.lock_all()
+    return res
+
+@app.get("/api/devices/battery")
+async def api_device_battery():
+    res = await device_control.get_battery_status()
     return res
 
 @app.post("/api/devices/play")
@@ -4053,10 +4106,15 @@ async def api_voice_inject(payload: dict):
             await q.put(msg)
         return {"success": True, "dispatched": len(_VOICE_INBOUND_QUEUES), "text": text}
     else:
-        # Fallback if UI is not connected: execute fast action directly
         act = detect_action_fast(text)
-        if act and act.get("action") == "device_unlock_all":
-            res = await device_control.unlock_all_three()
+        if act and act.get("action") in ("device_unlock_all", "unlock_all_devices"):
+            res = await device_control.unlock_all(pin=act.get("pin", ""))
+            return {"success": True, "action": act, "result": res}
+        elif act and act.get("action") == "device_lock_all":
+            res = await device_control.lock_all()
+            return {"success": True, "action": act, "result": res}
+        elif act and act.get("action") == "phone_battery":
+            res = await device_control.get_battery_status()
             return {"success": True, "action": act, "result": res}
         return {"success": True, "dispatched": 0, "text": text}
 
