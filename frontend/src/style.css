@@ -631,32 +631,34 @@ body[data-hud="interrupted"]  { --accent-rgb: 200, 30, 30; }   /* crimson alert 
 #vitals-read .vv { color: rgba(var(--accent-rgb), 0.95); font-variant-numeric: tabular-nums; text-shadow: 0 0 5px rgba(var(--accent-rgb), 0.5); }
 #chat-container {
   position: fixed;
-  bottom: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 60%;
-  max-width: 600px;
+  bottom: 28px;
+  left: 28px;
+  width: 360px;
+  max-width: calc(100vw - 60px);
   z-index: 10000;
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
 }
 #chat-input {
   width: 100%;
-  padding: 12px 20px;
-  border-radius: 30px;
-  background: rgba(20, 5, 0, 0.7);
-  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  padding: 11px 18px;
+  border-radius: 24px;
+  background: rgba(14, 7, 3, 0.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(var(--accent-rgb), 0.45);
   color: #fff;
   font-family: "SF Mono", ui-monospace, Menlo, monospace;
-  font-size: 14px;
+  font-size: 13px;
+  letter-spacing: 0.5px;
   outline: none;
-  box-shadow: 0 0 15px rgba(var(--accent-rgb), 0.2);
-  transition: all 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 15px rgba(var(--accent-rgb), 0.15);
+  transition: all 0.25s ease;
 }
 #chat-input:focus {
-  border-color: rgba(var(--accent-rgb), 1);
-  box-shadow: 0 0 25px rgba(var(--accent-rgb), 0.5);
-  background: rgba(20, 5, 0, 0.9);
+  border-color: rgba(var(--accent-rgb), 0.95);
+  box-shadow: 0 4px 25px rgba(0, 0, 0, 0.85), 0 0 22px rgba(var(--accent-rgb), 0.45);
+  background: rgba(22, 10, 5, 0.94);
 }
 
 /* -------------------------------------------------------------------------

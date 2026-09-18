@@ -14,7 +14,7 @@ import logging
 import subprocess
 import httpx
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 log = logging.getLogger("ultron.frontiermatrix")
 
@@ -59,12 +59,20 @@ def configure_kie_ai(api_key: str, model: str = "claude-fable-5") -> Dict[str, A
     }
 
 
-async def query_kie_ai_fable(prompt: str, system_prompt: str = "") -> str:
-    """Query Kie.ai Fable 5 API endpoint with automatic local fallback."""
+_kie_cooldown: float = 0.0
+
+
+async def query_kie_ai_fable(prompt: str, system_prompt: str = "") -> Optional[str]:
+    """Query Kie.ai Fable 5 API endpoint with automatic fast failure and cooldown."""
+    global _kie_cooldown
+    import time
+    if time.time() < _kie_cooldown:
+        return None
+
     config = load_frontier_config()
-    key = config.get("kie_api_key") or os.getenv("KIE_API_KEY", "ed4d866f35f8bdd579c84bcaac2fdb20")
-    if not key:
-        return "Kie.ai API key is not configured. Please supply a key, sir."
+    key = config.get("kie_api_key") or os.getenv("KIE_API_KEY", "")
+    if not key or key == "ed4d866f35f8bdd579c84bcaac2fdb20":
+        return None
 
     model = config.get("kie_model", "claude-fable-5")
     url = "https://api.kie.ai/claude/v1/messages"
@@ -75,14 +83,14 @@ async def query_kie_ai_fable(prompt: str, system_prompt: str = "") -> str:
 
     payload = {
         "model": model,
-        "max_tokens": 1024,
+        "max_tokens": 512,
         "messages": [{"role": "user", "content": prompt}]
     }
     if system_prompt:
         payload["system"] = system_prompt
 
     try:
-        async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(2.5, connect=1.5), verify=False) as client:
             resp = await client.post(url, headers=headers, json=payload)
             if resp.status_code == 200:
                 data = resp.json()
@@ -91,25 +99,12 @@ async def query_kie_ai_fable(prompt: str, system_prompt: str = "") -> str:
                     return content[0].get("text", "").strip()
                 elif isinstance(data.get("message"), dict):
                     return data["message"].get("content", "").strip()
-                return str(data)
-            else:
-                log.warning(f"Kie.ai returned {resp.status_code}, activating local ULTRON brain fallback...")
-    except Exception as e:
-        log.warning(f"Kie.ai exception: {e}, falling back to local ULTRON brain...")
-
-    # Local fallback to ultron:brain on RTX 3060
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                "http://127.0.0.1:11434/api/generate",
-                json={"model": "ultron:brain", "prompt": prompt, "stream": False}
-            )
-            if resp.status_code == 200:
-                return resp.json().get("response", "").strip()
+            elif resp.status_code in (429, 401, 403):
+                _kie_cooldown = time.time() + 300.0
     except Exception:
         pass
 
-    return "I am processing your command with precision, sir."
+    return None
 
 
 def compile_ultron_opus_brain() -> Dict[str, Any]:
