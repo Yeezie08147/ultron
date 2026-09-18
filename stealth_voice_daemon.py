@@ -280,18 +280,6 @@ def execute_voice_command(phrase: str):
         speak_response(res.get("message", "Scene executed, sir."))
         return
 
-    # 13. Sub-GHz Radio & F.R.A.N.K
-    if "sub ghz" in clean or "sub-ghz" in clean:
-        import sub_ghz
-        res = sub_ghz.read(433.92)
-        speak_response(res.get("message", "Sub-GHz read complete, sir."))
-        return
-    if "frank" in clean or "radio signal" in clean:
-        import frank_radio
-        res = frank_radio.record_raw_signal(100000000)
-        speak_response(res.get("message", "Radio signal recorded, sir."))
-        return
-
     # 14. Server fast action detection fallback
     try:
         from server import detect_action_fast
@@ -348,6 +336,20 @@ def _background_listener_loop():
             return
 
         log.info(f"Heard voice: '{text}'")
+        
+        # Forward recognized voice to the running ULTRON server via /api/voice/inject
+        forwarded = False
+        try:
+            import requests
+            resp = requests.post("http://127.0.0.1:8340/api/voice/inject", json={"text": text}, timeout=2.0)
+            if resp.status_code == 200 and resp.json().get("dispatched", 0) > 0:
+                forwarded = True
+        except Exception:
+            forwarded = False
+
+        if forwarded:
+            return
+
         t_lower = text.lower()
 
         # Check if wake trigger is present in phrase

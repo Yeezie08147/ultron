@@ -660,197 +660,163 @@ body[data-hud="interrupted"]  { --accent-rgb: 200, 30, 30; }   /* crimson alert 
 }
 
 /* -------------------------------------------------------------------------
-   Sub-GHz Radio Matrix Modal & Console
+   ULTRON Security & Master Passcode Modal
    ------------------------------------------------------------------------- */
-#subghz-modal {
+#auth-modal {
   position: fixed;
-  top: 75px;
-  right: 20px;
-  width: 360px;
-  background: rgba(14, 8, 5, 0.85);
-  border: 1px solid rgba(var(--accent-rgb), 0.4);
-  border-radius: 14px;
-  padding: 16px;
-  z-index: 10001;
-  backdrop-filter: blur(25px);
-  -webkit-backdrop-filter: blur(25px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(var(--accent-rgb), 0.2);
-  color: #fff;
-  font-family: "SF Mono", ui-monospace, Menlo, monospace;
-  animation: slide-in-down 0.25s ease-out;
-  -webkit-app-region: no-drag;
-}
-
-.subghz-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid rgba(var(--accent-rgb), 0.2);
-}
-
-.subghz-title {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: rgba(var(--accent-rgb), 1);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.subghz-dot {
-  color: #10b981;
-  animation: pulse-dot 1.5s infinite;
-}
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
-#btn-subghz-close {
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 14px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-}
-#btn-subghz-close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.subghz-controls-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.subghz-controls-row label {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.6);
-  letter-spacing: 0.5px;
-}
-
-#subghz-freq {
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(var(--accent-rgb), 0.3);
-  border-radius: 8px;
-  color: #fff;
-  padding: 8px 10px;
-  font-size: 12px;
-  font-family: inherit;
-  outline: none;
-}
-
-.subghz-btn-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.subghz-act-btn {
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 10px 8px;
-  background: rgba(var(--accent-rgb), 0.15);
+  background: rgba(4, 2, 1, 0.82);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  z-index: 20000;
+  animation: auth-fade-in 0.3s ease-out;
+}
+
+@keyframes auth-fade-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.auth-box {
+  position: relative;
+  width: 90%;
+  max-width: 420px;
+  background: rgba(18, 10, 6, 0.88);
   border: 1px solid rgba(var(--accent-rgb), 0.4);
-  border-radius: 8px;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  border-radius: 16px;
+  padding: 36px 32px;
+  text-align: center;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.8), 0 0 30px rgba(var(--accent-rgb), 0.2);
 }
 
-.subghz-act-btn:hover {
-  background: rgba(var(--accent-rgb), 0.3);
+.auth-box.shake {
+  animation: auth-shake 0.4s ease-in-out;
+}
+
+@keyframes auth-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-10px); }
+  40%, 80% { transform: translateX(10px); }
+}
+
+.auth-corner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
   border-color: rgba(var(--accent-rgb), 0.8);
-  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.3);
+  border-style: solid;
+}
+.auth-corner.tl { top: -2px; left: -2px; border-width: 2px 0 0 2px; }
+.auth-corner.tr { top: -2px; right: -2px; border-width: 2px 2px 0 0; }
+.auth-corner.bl { bottom: -2px; left: -2px; border-width: 0 0 2px 2px; }
+.auth-corner.br { bottom: -2px; right: -2px; border-width: 0 2px 2px 0; }
+
+.auth-icon {
+  margin-bottom: 14px;
+  color: rgba(var(--accent-rgb), 1);
+  filter: drop-shadow(0 0 15px rgba(var(--accent-rgb), 0.7));
 }
 
-.subghz-act-btn.raw-btn {
-  background: rgba(234, 179, 8, 0.15);
-  border-color: rgba(234, 179, 8, 0.4);
-  color: #fef08a;
-}
-.subghz-act-btn.raw-btn:hover {
-  background: rgba(234, 179, 8, 0.3);
-  border-color: rgba(234, 179, 8, 0.8);
-  box-shadow: 0 0 12px rgba(234, 179, 8, 0.3);
+.auth-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: #fff;
+  margin-bottom: 8px;
+  text-shadow: 0 0 12px rgba(var(--accent-rgb), 0.5);
 }
 
-.subghz-act-btn.nfc-btn {
-  background: rgba(6, 182, 212, 0.15);
-  border-color: rgba(6, 182, 212, 0.4);
-  color: #67e8f9;
-}
-.subghz-act-btn.nfc-btn:hover {
-  background: rgba(6, 182, 212, 0.3);
-  border-color: rgba(6, 182, 212, 0.8);
-  box-shadow: 0 0 12px rgba(6, 182, 212, 0.3);
-}
-
-.subghz-act-btn.rfid-btn {
-  background: rgba(168, 85, 247, 0.15);
-  border-color: rgba(168, 85, 247, 0.4);
-  color: #d8b4fe;
-}
-.subghz-act-btn.rfid-btn:hover {
-  background: rgba(168, 85, 247, 0.3);
-  border-color: rgba(168, 85, 247, 0.8);
-  box-shadow: 0 0 12px rgba(168, 85, 247, 0.3);
-}
-
-.subghz-act-btn.ir-btn {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.4);
-  color: #fca5a5;
-}
-.subghz-act-btn.ir-btn:hover {
-  background: rgba(239, 68, 68, 0.3);
-  border-color: rgba(239, 68, 68, 0.8);
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
-}
-
-.subghz-act-btn.ibutton-btn {
-  background: rgba(16, 185, 129, 0.15);
-  border-color: rgba(16, 185, 129, 0.4);
-  color: #6ee7b7;
-}
-.subghz-act-btn.ibutton-btn:hover {
-  background: rgba(16, 185, 129, 0.3);
-  border-color: rgba(16, 185, 129, 0.8);
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.3);
-}
-
-.subghz-log-header {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.5);
-  margin-bottom: 6px;
-  letter-spacing: 0.5px;
-}
-
-#subghz-log-console {
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 10px;
+.auth-subtitle {
   font-size: 11px;
-  color: #38bdf8;
+  letter-spacing: 1.5px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 24px;
+  font-family: monospace;
+}
+
+.auth-field {
+  margin-bottom: 16px;
+}
+
+.auth-field input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  border-radius: 10px;
+  padding: 12px 16px;
+  color: #fff;
+  font-size: 14px;
+  letter-spacing: 3px;
+  outline: none;
+  text-align: center;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.auth-field input:focus {
+  border-color: rgba(var(--accent-rgb), 0.9);
+  box-shadow: 0 0 15px rgba(var(--accent-rgb), 0.4), inset 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.auth-error {
+  color: #f87171;
+  font-size: 12px;
+  letter-spacing: 1px;
+  margin-bottom: 14px;
+  text-shadow: 0 0 8px rgba(248, 113, 113, 0.4);
+}
+
+.auth-submit-btn {
+  width: 100%;
+  padding: 13px;
+  background: rgba(var(--accent-rgb), 0.2);
+  border: 1px solid rgba(var(--accent-rgb), 0.6);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.auth-submit-btn:hover {
+  background: rgba(var(--accent-rgb), 0.4);
+  border-color: rgba(var(--accent-rgb), 1);
+  box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.5);
+  transform: translateY(-1px);
+}
+
+/* Device Matrix Empty State */
+.matrix-empty {
+  padding: 16px 12px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(var(--accent-rgb), 0.25);
+  border-radius: 8px;
+}
+
+.matrix-empty-icon {
+  font-size: 24px;
+  margin-bottom: 6px;
+  opacity: 0.7;
+}
+
+.matrix-empty-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: rgba(var(--accent-rgb), 0.9);
+  margin-bottom: 4px;
+}
+
+.matrix-empty-sub {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
   line-height: 1.4;
-  min-height: 70px;
-  max-height: 120px;
-  overflow-y: auto;
-  word-break: break-word;
 }
 
 /* ---------------------------------------------------------------------------

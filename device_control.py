@@ -220,97 +220,95 @@ async def volume_all(level: int) -> dict:
     return {"success": success_count > 0, "count": success_count}
 
 
-# ── In-Memory Device Matrix State (3 Devices as featured in the ULTRON video) ──
-_DEVICE_MATRIX = [
-    {
-        "id": 1,
-        "name": "Device 01 (Pixel / Galaxy)",
-        "serial": "USB-ADB-01",
-        "status": "LOCKED",
-        "battery": 94,
-        "media": "Standby",
-        "real": False
-    },
-    {
-        "id": 2,
-        "name": "Device 02 (OnePlus / Xiaomi)",
-        "serial": "USB-ADB-02",
-        "status": "LOCKED",
-        "battery": 88,
-        "media": "Standby",
-        "real": False
-    },
-    {
-        "id": 3,
-        "name": "Device 03 (Companion Mobile)",
-        "serial": "LINK-ADB-03",
-        "status": "LOCKED",
-        "battery": 82,
-        "media": "Standby",
-        "real": False
-    }
-]
+# ── In-Memory Media State for Active Devices ──
+_DEVICE_MEDIA_STATE: Dict[str, str] = {}
 
 
 def get_device_matrix() -> List[Dict[str, Any]]:
-    """Return real-time status of all 3 devices in the matrix."""
+    """Return real-time status of only physically connected devices."""
     real_devices = discover_devices()
-    for i, dev in enumerate(_DEVICE_MATRIX):
-        if i < len(real_devices):
-            dev["serial"] = real_devices[i]
-            dev["real"] = True
-            try:
-                bat_out = _adb("shell", "dumpsys", "battery", serial=real_devices[i])
-                for line in bat_out.splitlines():
-                    if "level:" in line:
-                        dev["battery"] = int(line.split(":")[1].strip())
-            except Exception:
-                pass
-    return _DEVICE_MATRIX
+    if not real_devices:
+        return []
+
+    matrix = []
+    for i, serial in enumerate(real_devices):
+        model = _adb("shell", "getprop", "ro.product.model", serial=serial)
+        brand = _adb("shell", "getprop", "ro.product.brand", serial=serial)
+        display_name = f"{brand.capitalize()} {model}" if (brand and model) else (model or f"Device {i+1}")
+
+        battery = 100
+        try:
+            bat_out = _adb("shell", "dumpsys", "battery", serial=serial)
+            for line in bat_out.splitlines():
+                if "level:" in line:
+                    battery = int(line.split(":")[1].strip())
+                    break
+        except Exception:
+            battery = 100
+
+        is_unlocked = _is_screen_on(serial)
+        matrix.append({
+            "id": i + 1,
+            "name": display_name,
+            "serial": serial,
+            "status": "UNLOCKED" if is_unlocked else "LOCKED",
+            "battery": battery,
+            "media": _DEVICE_MEDIA_STATE.get(serial, "Standby"),
+            "real": True
+        })
+    return matrix
 
 
 async def unlock_all_three() -> dict:
-    """Unlock all 3 mobile devices simultaneously (matches Neural Stack Ultron video)."""
+    """Unlock connected mobile devices."""
     real_devices = discover_devices()
+    if not real_devices:
+        return {
+            "success": False,
+            "count": 0,
+            "message": "No mobile devices detected in the matrix, sir."
+        }
+    
     pins = _get_pins()
+    tasks = []
+    for i, s in enumerate(real_devices):
+        p = pins[i] if i < len(pins) else ""
+        tasks.append(asyncio.to_thread(unlock_device, s, p))
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    success_count = sum(1 for r in results if r is True)
     
-    if real_devices:
-        tasks = []
-        for i, s in enumerate(real_devices):
-            p = pins[i] if i < len(pins) else ""
-            tasks.append(asyncio.to_thread(unlock_device, s, p))
-        await asyncio.gather(*tasks, return_exceptions=True)
-    
-    for dev in _DEVICE_MATRIX:
-        dev["status"] = "UNLOCKED"
-        
+    count_text = f"All {len(real_devices)}" if len(real_devices) > 1 else "1"
     return {
-        "success": True,
-        "count": 3,
-        "message": "Checking. One second. All three got unlocked."
+        "success": success_count > 0,
+        "count": success_count,
+        "message": f"Checking. One second. {count_text} device{'s' if len(real_devices) > 1 else ''} unlocked, sir."
     }
 
 
 async def play_favorite_song_all(song: str = "Back in Black AC/DC") -> dict:
-    """Play favorite song across all 3 devices simultaneously (matches Neural Stack Ultron video)."""
+    """Play favorite song across connected devices and host system."""
     real_devices = discover_devices()
-    
     if real_devices:
         tasks = [asyncio.to_thread(play_media_on_device, s, song) for s in real_devices]
         await asyncio.gather(*tasks, return_exceptions=True)
-        
+        for s in real_devices:
+            _DEVICE_MEDIA_STATE[s] = f"Playing: {song}"
+
     try:
         import webbrowser
         from urllib.parse import quote
         webbrowser.open(f"https://www.youtube.com/results?search_query={quote(song)}")
     except Exception:
         pass
-        
-    for dev in _DEVICE_MATRIX:
-        dev["media"] = f"Playing: {song}"
-        
+
+    if not real_devices:
+        return {
+            "success": True,
+            "message": f"Playing {song} on host audio system. No mobile devices connected."
+        }
     return {
         "success": True,
-        "message": "Playing."
+        "message": f"Playing {song} across host and {len(real_devices)} connected device{'s' if len(real_devices) > 1 else ''}."
     }
+
 

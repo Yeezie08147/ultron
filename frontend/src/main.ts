@@ -73,7 +73,17 @@ function updateScreenLockUI(locked: boolean) {
 }
 
 function renderDeviceMatrix(devices: any[]) {
-  if (!matrixListEl || !Array.isArray(devices)) return;
+  if (!matrixListEl) return;
+  if (!Array.isArray(devices) || devices.length === 0) {
+    matrixListEl.innerHTML = `
+      <div class="matrix-empty">
+        <div class="matrix-empty-icon">📱</div>
+        <div class="matrix-empty-title">NO DEVICES CONNECTED</div>
+        <div class="matrix-empty-sub">Connect Android phone via USB (with USB Debugging) to link with ULTRON</div>
+      </div>
+    `;
+    return;
+  }
   matrixListEl.innerHTML = devices.map((d: any) => {
     const isDevLocked = d.status === "LOCKED";
     const badgeClass = isDevLocked ? "locked" : "unlocked";
@@ -156,6 +166,17 @@ socket.onMessage((msg) => {
     updateScreenLockUI(!!msg.locked);
   } else if (type === "device_matrix_update") {
     renderDeviceMatrix(msg.devices as any[]);
+  } else if (type === "transcript") {
+    const txt = String(msg.text || "");
+    if (txt) {
+      console.log("[transcript]", txt);
+      setActionBanner(`User: "${txt}"`);
+      const captionEl = document.getElementById("caption");
+      if (captionEl) captionEl.textContent = `User: "${txt}"`;
+      if (currentState === "idle") {
+        transition("thinking");
+      }
+    }
   } else if (type === "audio") {
     const audioData = msg.data as string;
     console.log("[audio] received", audioData ? `${audioData.length} chars` : "EMPTY", "state:", currentState);
@@ -176,9 +197,6 @@ socket.onMessage((msg) => {
       setActionBanner(txt);
       const captionEl = document.getElementById("caption");
       if (captionEl) captionEl.textContent = txt;
-      if (subGhzLogConsole && (txt.includes("Sub-GHz") || txt.includes("RF") || txt.includes("NFC") || txt.includes("RFID") || txt.includes("Infrared") || txt.includes("iButton") || txt.includes("MHz") || txt.includes("BadUSB"))) {
-        subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] ${txt}`;
-      }
     }
   } else if (type === "status") {
     const state = msg.state as string;
@@ -199,9 +217,6 @@ socket.onMessage((msg) => {
       setActionBanner(txt);
       const captionEl = document.getElementById("caption");
       if (captionEl) captionEl.textContent = txt;
-    }
-    if (subGhzLogConsole && txt && (txt.includes("Sub-GHz") || txt.includes("RF") || txt.includes("NFC") || txt.includes("RFID") || txt.includes("Infrared") || txt.includes("iButton") || txt.includes("MHz") || txt.includes("BadUSB"))) {
-      subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] ${txt}`;
     }
   } else if (type === "task_spawned") {
     console.log("[task]", "spawned:", msg.task_id, msg.prompt);
@@ -238,74 +253,17 @@ ensureAudioContext();
 // UI Controls
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// UI Controls & Dropdown Menu
+// ---------------------------------------------------------------------------
+
 const btnMute = document.getElementById("btn-mute")!;
 const btnMenu = document.getElementById("btn-menu");
 const menuDropdown = document.getElementById("menu-dropdown");
-const btnRestart = document.getElementById("btn-restart");
-const btnFixSelf = document.getElementById("btn-fix-self");
-
-// Sub-GHz Controls
-const btnSubGhz = document.getElementById("btn-subghz");
-const subGhzModal = document.getElementById("subghz-modal");
-const btnSubGhzClose = document.getElementById("btn-subghz-close");
-const subGhzFreqSelect = document.getElementById("subghz-freq") as HTMLSelectElement | null;
-const btnSubGhzRead = document.getElementById("btn-subghz-read");
-const btnSubGhzRaw = document.getElementById("btn-subghz-raw");
-const btnNfcRead = document.getElementById("btn-nfc-read");
-const btnRfidRead = document.getElementById("btn-rfid-read");
-const btnIrRead = document.getElementById("btn-ir-read");
-const btnIbuttonRead = document.getElementById("btn-ibutton-read");
-const subGhzLogConsole = document.getElementById("subghz-log-console");
-
-btnSubGhz?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (subGhzModal) {
-    subGhzModal.style.display = subGhzModal.style.display === "none" ? "block" : "none";
-  }
-});
-
-btnSubGhzClose?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (subGhzModal) subGhzModal.style.display = "none";
-});
-
-btnSubGhzRead?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  const freq = subGhzFreqSelect ? subGhzFreqSelect.value : "433.92";
-  if (subGhzLogConsole) subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] Listening for digital Sub-GHz RF packet at ${freq} MHz...`;
-  socket.send({ type: "chat", text: `read sub ghz at ${freq}` });
-});
-
-btnSubGhzRaw?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  const freq = subGhzFreqSelect ? subGhzFreqSelect.value : "433.92";
-  if (subGhzLogConsole) subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] Recording raw IQ waveform stream at ${freq} MHz...`;
-  socket.send({ type: "chat", text: `read raw sub ghz at ${freq}` });
-});
-
-btnNfcRead?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (subGhzLogConsole) subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] Scanning High-Frequency (13.56 MHz) NFC Tag...`;
-  socket.send({ type: "chat", text: "read nfc" });
-});
-
-btnRfidRead?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (subGhzLogConsole) subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] Reading 125 kHz RFID Proximity Tag...`;
-  socket.send({ type: "chat", text: "read rfid" });
-});
-
-btnIrRead?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (subGhzLogConsole) subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] Demodulating 38 kHz Infrared signal...`;
-  socket.send({ type: "chat", text: "read ir" });
-});
-
-btnIbuttonRead?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (subGhzLogConsole) subGhzLogConsole.textContent = `[${new Date().toLocaleTimeString()}] Reading 1-Wire Dallas DS1990A key...`;
-  socket.send({ type: "chat", text: "read ibutton" });
-});
+const btnSettings = document.getElementById("btn-settings");
+const btnChangePass = document.getElementById("btn-change-pass");
+const btnLockSystem = document.getElementById("btn-lock-system");
+const btnAbout = document.getElementById("btn-about");
 
 btnMute.addEventListener("click", (e) => {
   e.stopPropagation();
@@ -330,42 +288,218 @@ document.addEventListener("click", (e) => {
   if (menuDropdown && !target.closest("#btn-menu")) menuDropdown.style.display = "none";
 });
 
-btnRestart?.addEventListener("click", async (e) => {
-  e.stopPropagation();
-  if (menuDropdown) menuDropdown.style.display = "none";
-  statusEl.textContent = "restarting...";
-  try {
-    await fetch("/api/restart", { method: "POST" });
-    // Wait a few seconds then reload
-    setTimeout(() => window.location.reload(), 4000);
-  } catch {
-    statusEl.textContent = "restart failed";
-  }
-});
-
-btnFixSelf?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (menuDropdown) menuDropdown.style.display = "none";
-  // Activate work mode on the WebSocket session (JARVIS becomes Claude Code's voice)
-  socket.send({ type: "fix_self" });
-  statusEl.textContent = "entering work mode...";
-});
-
-// Settings button
-const btnSettings = document.getElementById("btn-settings")!;
-btnSettings.addEventListener("click", (e) => {
+btnSettings?.addEventListener("click", (e) => {
   e.stopPropagation();
   if (menuDropdown) menuDropdown.style.display = "none";
   openSettings();
 });
 
-// First-time setup detection — check after a short delay for server readiness
-setTimeout(() => {
-  checkFirstTimeSetup();
-}, 2000);
+btnAbout?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (menuDropdown) menuDropdown.style.display = "none";
+  setActionBanner("ULTRON // Autonomous Cybernetic Intelligence");
+});
 
 // ---------------------------------------------------------------------------
-// Chat Input & Neural Stack Buttons
+// Master Passcode & Security Matrix Flow
+// ---------------------------------------------------------------------------
+
+const authModal = document.getElementById("auth-modal");
+const authBox = document.querySelector(".auth-box") as HTMLElement | null;
+const authTitle = document.getElementById("auth-title");
+const authSubtitle = document.getElementById("auth-subtitle");
+const authFieldConfirm = document.getElementById("auth-field-confirm");
+const authInputPass = document.getElementById("auth-input-pass") as HTMLInputElement | null;
+const authInputConfirm = document.getElementById("auth-input-confirm") as HTMLInputElement | null;
+const authErrorMsg = document.getElementById("auth-error-msg");
+const btnAuthSubmit = document.getElementById("btn-auth-submit");
+const authForm = document.getElementById("auth-form");
+
+let authMode: "setup" | "login" | "change" = "login";
+
+function showAuthError(msg: string) {
+  if (authErrorMsg) {
+    authErrorMsg.textContent = msg;
+    authErrorMsg.style.display = "block";
+  }
+  if (authBox) {
+    authBox.classList.remove("shake");
+    void authBox.offsetWidth;
+    authBox.classList.add("shake");
+  }
+}
+
+function clearAuthError() {
+  if (authErrorMsg) {
+    authErrorMsg.textContent = "";
+    authErrorMsg.style.display = "none";
+  }
+}
+
+function openAuthModal(mode: "setup" | "login" | "change") {
+  authMode = mode;
+  clearAuthError();
+  if (authInputPass) authInputPass.value = "";
+  if (authInputConfirm) authInputConfirm.value = "";
+
+  if (mode === "setup") {
+    if (authTitle) authTitle.textContent = "CREATE MASTER PASSCODE";
+    if (authSubtitle) authSubtitle.textContent = "SET A SECURITY PASSCODE TO INITIALIZE ULTRON";
+    if (authFieldConfirm) authFieldConfirm.style.display = "block";
+    if (btnAuthSubmit) btnAuthSubmit.textContent = "CREATE & UNLOCK";
+    if (authInputPass) authInputPass.placeholder = "Enter Master Passcode";
+  } else if (mode === "login") {
+    if (authTitle) authTitle.textContent = "ULTRON SECURITY MATRIX";
+    if (authSubtitle) authSubtitle.textContent = "ENTER MASTER PASSCODE TO UNLOCK SYSTEM";
+    if (authFieldConfirm) authFieldConfirm.style.display = "none";
+    if (btnAuthSubmit) btnAuthSubmit.textContent = "UNLOCK ULTRON";
+    if (authInputPass) authInputPass.placeholder = "Master Passcode";
+  } else if (mode === "change") {
+    if (authTitle) authTitle.textContent = "CHANGE MASTER PASSCODE";
+    if (authSubtitle) authSubtitle.textContent = "ENTER CURRENT AND NEW PASSCODE";
+    if (authFieldConfirm) authFieldConfirm.style.display = "block";
+    if (btnAuthSubmit) btnAuthSubmit.textContent = "UPDATE PASSCODE";
+    if (authInputPass) authInputPass.placeholder = "Current Passcode";
+    if (authInputConfirm) authInputConfirm.placeholder = "New Passcode";
+  }
+
+  if (authModal) authModal.style.display = "flex";
+  setTimeout(() => authInputPass?.focus(), 150);
+}
+
+function closeAuthModal() {
+  if (authModal) authModal.style.display = "none";
+  clearAuthError();
+}
+
+async function checkAuthStatus() {
+  try {
+    const token = localStorage.getItem("ultron_session_token") || "";
+    const res = await fetch("/api/auth/status", {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    
+    if (!data.has_password) {
+      openAuthModal("setup");
+      updateScreenLockUI(true);
+    } else if (!data.authenticated) {
+      openAuthModal("login");
+      updateScreenLockUI(true);
+    } else {
+      closeAuthModal();
+      updateScreenLockUI(!!data.screen_locked);
+    }
+  } catch (e) {
+    console.warn("Auth check error:", e);
+  }
+}
+
+authForm?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  clearAuthError();
+  const pass1 = authInputPass?.value.trim() || "";
+  const pass2 = authInputConfirm?.value.trim() || "";
+
+  if (authMode === "setup") {
+    if (pass1.length < 3) {
+      showAuthError("Passcode must be at least 3 characters.");
+      return;
+    }
+    if (pass1 !== pass2) {
+      showAuthError("Passcodes do not match.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/auth/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pass1 })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showAuthError(data.error || "Failed to create passcode.");
+        return;
+      }
+      localStorage.setItem("ultron_session_token", data.token);
+      closeAuthModal();
+      updateScreenLockUI(false);
+      setActionBanner("MASTER PASSCODE CREATED // ACCESS GRANTED");
+      socket.send({ type: "chat", text: "report status" });
+    } catch {
+      showAuthError("Connection error. Try again.");
+    }
+  } else if (authMode === "login") {
+    if (!pass1) {
+      showAuthError("Enter master passcode.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pass1 })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showAuthError(data.error || "Invalid master passcode.");
+        return;
+      }
+      localStorage.setItem("ultron_session_token", data.token);
+      closeAuthModal();
+      updateScreenLockUI(false);
+      setActionBanner("ACCESS GRANTED // WELCOME BACK, SIR");
+    } catch {
+      showAuthError("Connection error. Try again.");
+    }
+  } else if (authMode === "change") {
+    if (!pass1 || !pass2) {
+      showAuthError("Both current and new passcodes are required.");
+      return;
+    }
+    if (pass2.length < 3) {
+      showAuthError("New passcode must be at least 3 characters.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/auth/change", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ old_password: pass1, new_password: pass2 })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showAuthError(data.error || "Failed to update passcode.");
+        return;
+      }
+      closeAuthModal();
+      setActionBanner("MASTER PASSCODE UPDATED");
+    } catch {
+      showAuthError("Connection error.");
+    }
+  }
+});
+
+btnLockSystem?.addEventListener("click", async (e) => {
+  e.stopPropagation();
+  if (menuDropdown) menuDropdown.style.display = "none";
+  localStorage.removeItem("ultron_session_token");
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } catch {}
+  updateScreenLockUI(true);
+  openAuthModal("login");
+});
+
+btnChangePass?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (menuDropdown) menuDropdown.style.display = "none";
+  openAuthModal("change");
+});
+
+// ---------------------------------------------------------------------------
+// Chat Input & Action Buttons
 // ---------------------------------------------------------------------------
 
 const chatInput = document.getElementById("chat-input") as HTMLInputElement | null;
@@ -389,8 +523,7 @@ const btnActionPlaySong = document.getElementById("btn-action-play-song");
 const btnActionTogglePc = document.getElementById("btn-action-toggle-pc");
 
 btnQuickUnlock?.addEventListener("click", () => {
-  setActionBanner("Unlocking screen...");
-  socket.send({ type: "chat", text: "unlock my screen" });
+  openAuthModal("login");
 });
 
 btnMatrixToggle?.addEventListener("click", (e) => {
@@ -406,40 +539,51 @@ btnMatrixMinimize?.addEventListener("click", (e) => {
 });
 
 btnActionUnlockPhones?.addEventListener("click", () => {
-  setActionBanner("Unlocking all 3 mobile devices...");
-  socket.send({ type: "chat", text: "unlock all three mobile devices" });
+  setActionBanner("Unlocking mobile devices...");
+  socket.send({ type: "chat", text: "unlock my mobile devices" });
 });
 
 btnActionPlaySong?.addEventListener("click", () => {
-  setActionBanner("Playing favorite song on all devices...");
-  socket.send({ type: "chat", text: "play my favorite song in all three of my devices" });
+  setActionBanner("Playing favorite song across matrix...");
+  socket.send({ type: "chat", text: "play my favorite song in all my devices" });
 });
 
 btnActionTogglePc?.addEventListener("click", () => {
   if (isScreenLocked) {
-    setActionBanner("Unlocking screen...");
-    socket.send({ type: "chat", text: "unlock my screen" });
+    openAuthModal("login");
   } else {
-    setActionBanner("Locking screen...");
-    socket.send({ type: "chat", text: "lock my screen" });
+    setActionBanner("Locking system...");
+    socket.send({ type: "action", action: "lock_screen" });
   }
 });
 
-// Initial fetch for screen state & devices
-async function initNeuralStackState() {
+// Periodic real-time poll for connected mobile devices
+async function pollDevices() {
   try {
-    const sRes = await fetch("/api/screen/state");
-    if (sRes.ok) {
-      const sData = await sRes.json();
-      updateScreenLockUI(!!sData.locked);
-    }
     const dRes = await fetch("/api/devices");
     if (dRes.ok) {
       const dData = await dRes.json();
       renderDeviceMatrix(dData.devices || []);
     }
+  } catch {}
+}
+
+// Initial fetch for screen state & devices
+async function initNeuralStackState() {
+  try {
+    await checkAuthStatus();
+    await pollDevices();
   } catch (e) {
-    console.warn("Failed to fetch initial device/screen state", e);
+    console.warn("Failed to fetch initial state", e);
   }
 }
 initNeuralStackState();
+
+// Poll devices every 4 seconds
+setInterval(pollDevices, 4000);
+
+// Check first time setup after slight delay
+setTimeout(() => {
+  checkFirstTimeSetup();
+}, 2500);
+

@@ -36,6 +36,7 @@ cloudflared.exe
 *.db
 data/*.jsonl
 data/active_session.json
+data/auth.json
 data/.jarvis_output.txt
 data/screenshots/
 *.db-shm

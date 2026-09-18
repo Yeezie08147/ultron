@@ -45,7 +45,7 @@ from typing import Optional
 
 import anthropic
 import httpx
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -115,6 +115,7 @@ import android_db_tool
 import device_control
 import binary_preservation
 import smartthings_matrix
+import auth_manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 log = logging.getLogger("ultron")
@@ -135,6 +136,9 @@ DESKTOP_PATH = Path.home() / "Desktop"
 
 # ULTRON Screen State (Locked / Unlocked dual-mode HUD)
 _SCREEN_STATE = {"locked": True, "lock_time": time.time()}
+
+# Voice injection queues (for hardware mic daemon / API injection)
+_VOICE_INBOUND_QUEUES: list[asyncio.Queue] = []
 
 JARVIS_SYSTEM_PROMPT = """\
 You are JARVIS — Just A Rather Very Intelligent System. You serve as {user_name}'s AI assistant, modeled precisely after Tony Stark's AI from the MCU films.
@@ -1954,15 +1958,6 @@ def detect_action_fast(text: str) -> dict | None:
         g = "Good morning, sir." if 4 <= hr < 12 else ("Good afternoon, sir." if 12 <= hr < 17 else "Good evening, sir.")
         return {"action": "speak_direct", "text": f"{g} Systems fully online and responding. I am here and at your command."}
 
-    # F.R.A.N.K — Radio Signal Tool Matrix
-    if any(p in t for p in ["frank pipeline", "record and playback", "record and decode radio", "frank radio tool", "frank radio", "run frank"]):
-        f_match = re.search(r'\b(\d{2,3}(?:\.\d+)?)\s*mhz\b', t)
-        freq = int(float(f_match.group(1)) * 1000000) if f_match else 100000000
-        return {"action": "frank_pipeline", "frequency": freq}
-    if any(p in t for p in ["record raw radio", "record radio signal", "record radio"]):
-        f_match = re.search(r'\b(\d{2,3}(?:\.\d+)?)\s*mhz\b', t)
-        freq = int(float(f_match.group(1)) * 1000000) if f_match else 100000000
-        return {"action": "frank_record", "frequency": freq}
     # Android Multi-Device Control (ADB)
     if any(p in t for p in ["unlock phone", "unlock my phone", "unlock the phone", "unlock device", "unlock devices", "unlock all devices", "unlock android"]):
         return {"action": "device_unlock_all"}
@@ -2543,6 +2538,22 @@ async def voice_handler(ws: WebSocket):
     """
     await ws.accept()
     task_manager.register_websocket(ws)
+    inbound_queue: asyncio.Queue = asyncio.Queue()
+    _VOICE_INBOUND_QUEUES.append(inbound_queue)
+
+    async def _ws_reader():
+        try:
+            while True:
+                raw = await ws.receive_text()
+                try:
+                    m = json.loads(raw)
+                    await inbound_queue.put(m)
+                except json.JSONDecodeError:
+                    continue
+        except (WebSocketDisconnect, Exception):
+            await inbound_queue.put(None)
+
+    ws_reader_task = asyncio.create_task(_ws_reader())
     history: list[dict] = []
     work_session = WorkSession()
     planner = TaskPlanner()
@@ -2622,11 +2633,9 @@ async def voice_handler(ws: WebSocket):
             return  # WebSocket already gone
 
         while True:
-            raw = await ws.receive_text()
-            try:
-                msg = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
+            msg = await inbound_queue.get()
+            if msg is None:
+                break
 
             # ── Fix-self: activate work mode in JARVIS repo ──
             if msg.get("type") == "fix_self":
@@ -3423,6 +3432,9 @@ async def voice_handler(ws: WebSocket):
     except Exception as e:
         log.error(f"WebSocket error: {e}", exc_info=True)
     finally:
+        ws_reader_task.cancel()
+        if inbound_queue in _VOICE_INBOUND_QUEUES:
+            _VOICE_INBOUND_QUEUES.remove(inbound_queue)
         task_manager.unregister_websocket(ws)
 
 
@@ -3693,6 +3705,97 @@ async def api_screen_unlock():
 async def api_screen_lock():
     _SCREEN_STATE["locked"] = True
     return {"status": "locked", "message": "Screen locked."}
+
+
+# ---------------------------------------------------------------------------
+# ULTRON Master Passcode Security & Voice Injection Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/auth/status")
+async def api_auth_status(request: Request):
+    has_pwd = auth_manager.is_password_set()
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "").strip() if "Bearer " in auth_header else ""
+    is_authenticated = auth_manager.verify_session(token) if has_pwd else True
+    return {
+        "has_password": has_pwd,
+        "authenticated": is_authenticated,
+        "screen_locked": _SCREEN_STATE["locked"]
+    }
+
+@app.post("/api/auth/setup")
+async def api_auth_setup(payload: dict):
+    if auth_manager.is_password_set():
+        return JSONResponse(status_code=400, content={"success": False, "error": "Master passcode is already configured."})
+    pwd = (payload or {}).get("password", "").strip()
+    if not pwd or len(pwd) < 3:
+        return JSONResponse(status_code=400, content={"success": False, "error": "Passcode must be at least 3 characters."})
+    ok, msg = auth_manager.set_password(pwd)
+    if ok:
+        token = auth_manager.create_session()
+        _SCREEN_STATE["locked"] = False
+        await task_manager._notify({"type": "screen_state", "locked": False})
+        return {"success": True, "token": token, "message": "Master passcode created."}
+    return JSONResponse(status_code=500, content={"success": False, "error": msg})
+
+@app.post("/api/auth/login")
+async def api_auth_login(payload: dict):
+    pwd = (payload or {}).get("password", "").strip()
+    if not auth_manager.is_password_set():
+        token = auth_manager.create_session()
+        _SCREEN_STATE["locked"] = False
+        await task_manager._notify({"type": "screen_state", "locked": False})
+        return {"success": True, "token": token, "message": "No passcode configured. Access granted."}
+    if auth_manager.verify_password(pwd):
+        token = auth_manager.create_session()
+        _SCREEN_STATE["locked"] = False
+        await task_manager._notify({"type": "screen_state", "locked": False})
+        return {"success": True, "token": token, "message": "Access granted."}
+    return JSONResponse(status_code=401, content={"success": False, "error": "Invalid master passcode."})
+
+@app.post("/api/auth/logout")
+async def api_auth_logout():
+    auth_manager.invalidate_all_sessions()
+    _SCREEN_STATE["locked"] = True
+    await task_manager._notify({"type": "screen_state", "locked": True})
+    return {"success": True, "message": "ULTRON locked."}
+
+@app.post("/api/auth/change")
+async def api_auth_change(payload: dict):
+    old_pwd = (payload or {}).get("old_password", "").strip()
+    new_pwd = (payload or {}).get("new_password", "").strip()
+    if not new_pwd or len(new_pwd) < 3:
+        return JSONResponse(status_code=400, content={"success": False, "error": "New passcode must be at least 3 characters."})
+    ok, msg = auth_manager.change_password(old_pwd, new_pwd)
+    if ok:
+        return {"success": True, "message": "Master passcode changed successfully."}
+    return JSONResponse(status_code=400, content={"success": False, "error": msg})
+
+@app.post("/api/voice/inject")
+async def api_voice_inject(payload: dict):
+    """Receive recognized voice text from desktop hardware mic daemon or API."""
+    text = (payload or {}).get("text", "").strip()
+    if not text:
+        return {"success": False, "error": "No speech text provided"}
+    
+    log.info(f"Voice injected: '{text}'")
+    # Broadcast to UI subtitles
+    await task_manager._notify({"type": "transcript", "text": text, "isFinal": True})
+    
+    # Push into active WebSocket voice processing queues
+    msg = {"type": "transcript", "text": text, "isFinal": True}
+    if _VOICE_INBOUND_QUEUES:
+        for q in _VOICE_INBOUND_QUEUES:
+            await q.put(msg)
+        return {"success": True, "dispatched": len(_VOICE_INBOUND_QUEUES), "text": text}
+    else:
+        # Fallback if UI is not connected: execute fast action directly
+        act = detect_action_fast(text)
+        if act and act.get("action") == "device_unlock_all":
+            res = await device_control.unlock_all_three()
+            return {"success": True, "action": act, "result": res}
+        return {"success": True, "dispatched": 0, "text": text}
+
 
 
 # ---------------------------------------------------------------------------

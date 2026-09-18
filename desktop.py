@@ -133,6 +133,14 @@ if __name__ == '__main__':
     # 2. Start system tray
     threading.Thread(target=setup_tray, daemon=True).start()
 
+    # 2b. Start native hardware microphone voice listener daemon
+    try:
+        import stealth_voice_daemon
+        stealth_voice_daemon.set_hud_callback(lambda show: show_window() if show else hide_window())
+        stealth_voice_daemon.start_stealth_daemon()
+    except Exception as e:
+        log.warning(f"Voice daemon init error: {e}")
+
     # 3. Wait for server readiness
     server_ready = False
     for _ in range(30):
