@@ -664,7 +664,8 @@ body[data-hud="interrupted"]  { --accent-rgb: 200, 30, 30; }   /* crimson alert 
 /* -------------------------------------------------------------------------
    ULTRON Security & Master Passcode Modal
    ------------------------------------------------------------------------- */
-#auth-modal {
+#auth-modal,
+#install-modal {
   position: fixed;
   inset: 0;
   display: flex;

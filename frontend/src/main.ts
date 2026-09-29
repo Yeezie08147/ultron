@@ -307,6 +307,55 @@ btnAbout?.addEventListener("click", (e) => {
 });
 
 // ---------------------------------------------------------------------------
+// 1-Line PowerShell Installer Modal
+// ---------------------------------------------------------------------------
+
+const btnInstall = document.getElementById("btn-install");
+const btnInstallPc = document.getElementById("btn-install-pc");
+const installModal = document.getElementById("install-modal");
+const btnCopyInstall = document.getElementById("btn-copy-install");
+const btnCloseInstall = document.getElementById("btn-close-install");
+
+const INSTALL_CMD = "irm https://raw.githubusercontent.com/Yeezie08147/ultron/main/install.ps1 | iex";
+
+function openInstallModal() {
+  if (installModal) installModal.style.display = "flex";
+}
+
+function closeInstallModal() {
+  if (installModal) installModal.style.display = "none";
+}
+
+btnInstall?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  openInstallModal();
+});
+
+btnInstallPc?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (menuDropdown) menuDropdown.style.display = "none";
+  openInstallModal();
+});
+
+btnCloseInstall?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  closeInstallModal();
+});
+
+btnCopyInstall?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  navigator.clipboard.writeText(INSTALL_CMD).then(() => {
+    if (btnCopyInstall) {
+      const orig = btnCopyInstall.textContent;
+      btnCopyInstall.textContent = "COPIED TO CLIPBOARD!";
+      setTimeout(() => {
+        if (btnCopyInstall) btnCopyInstall.textContent = orig;
+      }, 2500);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Master Passcode & Security Matrix Flow
 // ---------------------------------------------------------------------------
 

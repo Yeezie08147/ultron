@@ -594,13 +594,27 @@
 
     <!-- Download Section -->
     <section id="download" class="download-section">
-      <h2>DEPLOY ULTRON 2.0</h2>
-      <p>Clone the repository or download the release package to run ULTRON on your local machine.</p>
+      <h2>DEPLOY ULTRON</h2>
+      <p>Install ULTRON instantly on any Windows PC via PowerShell, or clone the repository manually.</p>
+
+      <!-- 1-Line PowerShell Web Installer -->
+      <div style="margin: 20px auto 30px auto; max-width: 780px; text-align: left;">
+        <div style="font-size: 13px; font-weight: 700; color: var(--accent-amber); letter-spacing: 2px; margin-bottom: 8px;">
+          ⚡ OFFICIAL 1-LINE POWERSHELL INSTALLER (WINDOWS):
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center; background: rgba(0, 0, 0, 0.7); border: 1px solid var(--border-glow); padding: 14px 18px; border-radius: 8px;">
+          <code id="landing-ps-cmd" style="color: #00F0FF; font-family: 'JetBrains Mono', monospace; font-size: 14px; flex: 1; word-break: break-all;">irm https://raw.githubusercontent.com/Yeezie08147/ultron/main/install.ps1 | iex</code>
+          <button onclick="navigator.clipboard.writeText('irm https://raw.githubusercontent.com/Yeezie08147/ultron/main/install.ps1 | iex'); this.textContent='COPIED!';" style="background: var(--accent-orange); color: #000; border: none; padding: 8px 16px; border-radius: 6px; font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 14px; cursor: pointer; white-space: nowrap;">COPY</button>
+        </div>
+        <p style="font-size: 13px; color: var(--text-muted); margin-top: 8px;">
+          Paste in Windows PowerShell. Automatically configures Python, virtual environment, and enables the global <code>ultron</code> (CLI) &amp; <code>ultron-gui</code> commands.
+        </p>
+      </div>
 
       <div class="code-block">
         <span style="color: #FF7800;">git clone</span> https://github.com/Yeezie08147/ultron.git<br>
-        <span style="color: #FF7800;">cd</span> ultron_2.0<br>
-        <span style="color: #10B981;">.\launch-jarvis-desktop.bat</span>
+        <span style="color: #FF7800;">cd</span> ultron<br>
+        <span style="color: #10B981;">.\install.bat</span>
       </div>
 
       <div style="display: flex; justify-content: center; gap: 16px;">
