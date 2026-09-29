@@ -230,15 +230,44 @@ async def handle_pause_command():
 
 
 async def handle_pair_command(arg: str = ""):
-    """Execute mobile force-pair / authorization recovery or wireless pairing."""
+    """Execute mobile force-pair / authorization recovery, dynamic Wi-Fi scan, or wireless pairing."""
     if not device_control:
         print_err("Device control module not available.")
         return
     parts = arg.strip().split()
-    target = parts[1] if len(parts) > 1 and ":" in parts[1] else ""
+    target = parts[1] if len(parts) > 1 else ""
     code = parts[2] if len(parts) > 2 else ""
     res = await device_control.force_pair(target=target, code=code)
     print_ultron(res.get("message", "Pairing sequence executed."))
+
+
+async def handle_wifi_command(arg: str = ""):
+    """Manage Wi-Fi network interface & auto-reconnect."""
+    if not device_control:
+        print_err("Device control module not available.")
+        return
+    parts = arg.strip().split()
+    subcmd = parts[1].lower() if len(parts) > 1 else "status"
+    
+    if subcmd in ("reconnect", "connect"):
+        target_profile = parts[2] if len(parts) > 2 else ""
+        res = device_control.reconnect_wifi(target_profile)
+        print_ultron(res.get("message", "Wi-Fi command executed."))
+    elif subcmd in ("scan", "adb", "phone"):
+        target_ip = parts[2] if len(parts) > 2 else ""
+        res = await device_control.auto_connect_wireless_adb(target_ip)
+        print_ultron(res.get("message", "Wireless ADB scan complete."))
+    else:
+        st = device_control.get_wifi_status()
+        state_color = Colors.GREEN if st.get("state") == "connected" else Colors.YELLOW
+        print(f"\n{Colors.BOLD}{Colors.CYAN}--- WI-FI NETWORK ADAPTER STATUS ---{Colors.RESET}")
+        print(f"  {Colors.BOLD}• Interface State:{Colors.RESET} {state_color}{st.get('state', 'unknown').upper()}{Colors.RESET}")
+        if st.get("ssid"):
+            print(f"  {Colors.BOLD}• Connected SSID:{Colors.RESET}  {Colors.WHITE}{st.get('ssid')}{Colors.RESET} (Signal: {st.get('signal', 'N/A')})")
+        profs = st.get("profiles", [])
+        if profs:
+            print(f"  {Colors.BOLD}• Saved Profiles:{Colors.RESET}  {', '.join(profs)}")
+        print(f"\n{Colors.GREY}  Commands: {Colors.ORANGE}/wifi reconnect [profile]{Colors.GREY} | {Colors.ORANGE}/wifi scan [phone_ip]{Colors.RESET}\n")
 
 
 def handle_facetrack_command(arg: str):
@@ -373,7 +402,8 @@ def print_help():
 
   {Colors.BOLD}{Colors.CYAN}📱 MOBILE DEVICE MATRIX COMMANDS:{Colors.RESET}
     {Colors.ORANGE}/devices{Colors.RESET}           Scan & display connected phones (Status, Battery, ID)
-    {Colors.ORANGE}/pair [ip:port code]{Colors.RESET} Force pair USB phone or pair Android via Wi-Fi
+    {Colors.ORANGE}/pair [scan|ip:port]{Colors.RESET} Force pair USB, auto-scan rotating Wi-Fi ports, or pair
+    {Colors.ORANGE}/wifi [status|reconnect]{Colors.RESET} Reconnect host Wi-Fi or auto-scan wireless phone
     {Colors.ORANGE}/diag{Colors.RESET}              Diagnose Samsung USB authorization & Auto Blocker
     {Colors.ORANGE}/unlock [pin]{Colors.RESET}      Wake & unlock connected phone screen (e.g. {Colors.GREY}/unlock 1234{Colors.RESET})
     {Colors.ORANGE}/lock{Colors.RESET}              Put connected phone screen to sleep / lock
@@ -398,7 +428,7 @@ def print_help():
     {Colors.ORANGE}/guide{Colors.RESET} or {Colors.ORANGE}/{Colors.RESET}          Display this slash command directory
     {Colors.ORANGE}/exit{Colors.RESET} or {Colors.ORANGE}/quit{Colors.RESET}      Stand down and exit ULTRON CLI
 
-{Colors.BOLD}{Colors.ORANGE}----------------------------------------------------------------------
+----------------------------------------------------------------------
   NATURAL LANGUAGE DIRECTIVES (NO SLASH NEEDED):
 ----------------------------------------------------------------------{Colors.RESET}
   You can speak to ULTRON directly in natural English:
@@ -439,6 +469,9 @@ async def execute_input(user_input: str):
         return
     elif lower.startswith("/pair") or lower in ("pair", "force pair"):
         await handle_pair_command(raw)
+        return
+    elif lower.startswith("/wifi") or lower in ("wifi", "reconnect wifi"):
+        await handle_wifi_command(raw)
         return
     elif lower.startswith("/unlock"):
         await handle_unlock_command(raw)

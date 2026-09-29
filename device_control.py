@@ -430,9 +430,13 @@ def lock_device(serial: str) -> bool:
 async def force_pair(target: str = "", code: str = "") -> dict:
     """
     Force pairing / authorization recovery for Android devices:
-    1. Wireless pairing: adb pair <target> <code> followed by adb connect <target>
-    2. USB pairing: adb reconnect to force the 'Allow USB debugging' prompt onto the phone screen.
+    1. Wireless dynamic scan: /pair scan [phone_ip] to auto-discover rotating ADB ports
+    2. Wireless pairing: adb pair <target> <code> followed by adb connect <target>
+    3. USB pairing: adb reconnect to force the 'Allow USB debugging' prompt onto the phone screen.
     """
+    if target.lower() in ("scan", "auto", "wifi"):
+        return await auto_connect_wireless_adb(target_ip=code)
+
     if target and code:
         log.info(f"Attempting wireless ADB pairing with {target}...")
         out = await asyncio.to_thread(_adb, "pair", target, code)
@@ -757,3 +761,196 @@ def open_app_on_device(serial: str, app_name: str) -> bool:
     except Exception as e:
         log.error(f"Failed to launch {app_name} on {serial}: {e}")
         return False
+
+
+# ── Android Wireless Debugging Dynamic Port Discovery & Auto-Connect ──
+
+def discover_wireless_adb_endpoints() -> List[str]:
+    """
+    Discover Android Wireless Debugging endpoints advertised via mDNS.
+    Android 11+ (Samsung One UI 6 / A55) assigns dynamic ephemeral ports
+    (e.g., 30000-50000) every time Wireless Debugging is activated as a security feature.
+    """
+    out = _adb("mdns", "services")
+    endpoints = []
+    for line in out.splitlines():
+        if "_adb" in line:
+            matches = re.findall(r'(\b\d{1,3}(?:\.\d{1,3}){3}:\d{2,5}\b)', line)
+            for m in matches:
+                if m not in endpoints:
+                    endpoints.append(m)
+    return endpoints
+
+
+def probe_device_wireless_port(ip: str, port_range: Tuple[int, int] = (35000, 46000), timeout: float = 0.04) -> Optional[int]:
+    """
+    Fast socket probe to find the open Wireless Debugging port on a specific phone IP.
+    Tests port 5555 first, then scans the dynamic port range in parallel.
+    """
+    import socket
+    from concurrent.futures import ThreadPoolExecutor
+
+    # Check classic port 5555 first
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.2)
+            if s.connect_ex((ip, 5555)) == 0:
+                return 5555
+    except Exception:
+        pass
+
+    found_port = None
+    stop_event = threading.Event()
+
+    def _check(p):
+        nonlocal found_port
+        if stop_event.is_set():
+            return
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(timeout)
+                if s.connect_ex((ip, p)) == 0:
+                    found_port = p
+                    stop_event.set()
+        except Exception:
+            pass
+
+    ports = list(range(port_range[0], port_range[1] + 1))
+    with ThreadPoolExecutor(max_workers=80) as executor:
+        for _ in executor.map(_check, ports):
+            if found_port:
+                break
+
+    return found_port
+
+
+async def auto_connect_wireless_adb(target_ip: str = "") -> dict:
+    """
+    Auto-detect and connect to Android Wireless Debugging endpoint over Wi-Fi.
+    Handles Samsung/Android's rotating security port mechanism automatically.
+    """
+    # 1. Check mDNS discovery (Zero-config Android Wireless Debugging)
+    endpoints = await asyncio.to_thread(discover_wireless_adb_endpoints)
+    if endpoints:
+        for ep in endpoints:
+            out = await asyncio.to_thread(_adb, "connect", ep)
+            if "connected to" in out.lower() and "cannot connect" not in out.lower():
+                return {
+                    "success": True,
+                    "endpoint": ep,
+                    "message": f"Successfully connected to {ep} via mDNS auto-discovery, sir."
+                }
+
+    # 2. Check target IP or .env PHONE_IP
+    ip = target_ip or os.getenv("PHONE_IP", "")
+    if ip:
+        log.info(f"Probing open Wireless Debugging port on {ip}...")
+        port = await asyncio.to_thread(probe_device_wireless_port, ip)
+        if port:
+            endpoint = f"{ip}:{port}"
+            out = await asyncio.to_thread(_adb, "connect", endpoint)
+            if "connected to" in out.lower() and "cannot connect" not in out.lower():
+                return {
+                    "success": True,
+                    "endpoint": endpoint,
+                    "message": f"Discovered dynamic port {port} on {ip} and successfully connected, sir."
+                }
+            return {
+                "success": False,
+                "endpoint": endpoint,
+                "message": f"Found port {port} on {ip}. ADB output: {out}. If unauthorized, pair with: /pair {endpoint} <pairing_code>, sir."
+            }
+        return {
+            "success": False,
+            "message": f"No open Wireless Debugging port detected on {ip}. Ensure Wireless Debugging is enabled in Settings > Developer Options, sir."
+        }
+
+    return {
+        "success": False,
+        "message": "No wireless ADB service found via mDNS. Specify phone IP via: /pair scan <phone_ip> or pair directly with: /pair <ip:port> <code>, sir."
+    }
+
+
+# ── Wi-Fi Adapter & Network Watchdog ──
+
+def get_wifi_status() -> dict:
+    """Retrieve host Wi-Fi interface state and available profiles via netsh."""
+    try:
+        if_res = subprocess.run(
+            ["netsh", "wlan", "show", "interfaces"],
+            capture_output=True, text=True, timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+        prof_res = subprocess.run(
+            ["netsh", "wlan", "show", "profiles"],
+            capture_output=True, text=True, timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+        
+        state = "disconnected"
+        ssid = ""
+        signal = ""
+        for line in if_res.stdout.splitlines():
+            line_str = line.strip()
+            if line_str.startswith("State"):
+                state = line_str.split(":")[-1].strip()
+            elif line_str.startswith("SSID") and not line_str.startswith("SSID name"):
+                ssid = line_str.split(":")[-1].strip()
+            elif line_str.startswith("Signal"):
+                signal = line_str.split(":")[-1].strip()
+
+        profiles = []
+        for line in prof_res.stdout.splitlines():
+            if "All User Profile" in line:
+                p_name = line.split(":")[-1].strip()
+                if p_name:
+                    profiles.append(p_name)
+
+        return {
+            "state": state,
+            "ssid": ssid,
+            "signal": signal,
+            "profiles": profiles
+        }
+    except Exception as e:
+        log.warning(f"Error querying Wi-Fi status: {e}")
+        return {"state": "error", "error": str(e), "profiles": []}
+
+
+def reconnect_wifi(profile_name: str = "") -> dict:
+    """
+    Attempt to connect / reconnect to a known saved Wi-Fi profile via netsh.
+    """
+    status = get_wifi_status()
+    target_profile = profile_name
+    if not target_profile and status.get("profiles"):
+        target_profile = status["profiles"][0]
+
+    if not target_profile:
+        return {
+            "success": False,
+            "message": "No saved Wi-Fi profiles found to connect to, sir."
+        }
+
+    try:
+        cmd = ["netsh", "wlan", "connect", f"name={target_profile}"]
+        subprocess.run(
+            cmd, capture_output=True, text=True, timeout=8,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+        time.sleep(1.5)
+        new_status = get_wifi_status()
+        if new_status.get("state") == "connected":
+            return {
+                "success": True,
+                "profile": target_profile,
+                "ssid": new_status.get("ssid", target_profile),
+                "message": f"Successfully reconnected to Wi-Fi network '{new_status.get('ssid', target_profile)}', sir."
+            }
+        return {
+            "success": False,
+            "profile": target_profile,
+            "message": f"Connection request issued for '{target_profile}'. State: {new_status.get('state')}, sir."
+        }
+    except Exception as e:
+        return {"success": False, "message": f"Wi-Fi reconnect error: {e}"}
