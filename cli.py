@@ -294,6 +294,76 @@ def handle_status_command():
     print()
 
 
+def handle_diag_command():
+    """Diagnose USB ADB and Samsung-specific authorization blockers."""
+    print(f"\n{Colors.BOLD}{Colors.CYAN}--- SAMSUNG & MOBILE MATRIX HARDWARE DIAGNOSTICS ---{Colors.RESET}")
+    
+    # 1. Check PnP USB Hardware
+    ps_pnp = (
+        'Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | '
+        'Where-Object { $_.FriendlyName -match "samsung|android|modem" -or $_.Class -eq "AndroidUsbDeviceClass" } | '
+        'Select-Object FriendlyName, Class, Status | ConvertTo-Json -Compress'
+    )
+    pnp_items = []
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps_pnp], capture_output=True, text=True, timeout=5)
+        raw = r.stdout.strip()
+        if raw:
+            import json
+            pnp_items = json.loads(raw)
+            if isinstance(pnp_items, dict):
+                pnp_items = [pnp_items]
+    except Exception:
+        pass
+
+    if pnp_items:
+        print(f"  {Colors.GREEN}● USB Hardware Detected by Windows:{Colors.RESET}")
+        for item in pnp_items:
+            print(f"    • {item.get('FriendlyName')} [{item.get('Class')}] - {item.get('Status')}")
+    else:
+        print(f"  {Colors.YELLOW}○ USB Hardware:{Colors.RESET} No USB Android device currently recognized by Windows.")
+
+    # 2. Check ADB Daemon Status
+    adb_out = ""
+    if device_control:
+        active, all_devs = device_control.get_detailed_device_status()
+        if active:
+            adb_out = f"ACTIVE & AUTHORIZED: {', '.join(active)}"
+        elif all_devs:
+            adb_out = f"DETECTED BUT {all_devs[0].get('status', 'UNAUTHORIZED').upper()}: {all_devs[0].get('serial')}"
+        else:
+            adb_out = "No active ADB transport found."
+    print(f"\n  {Colors.BOLD}● ADB Daemon State:{Colors.RESET} {adb_out}")
+
+    # 3. Print Samsung-specific instructions
+    print(f"""
+{Colors.BOLD}{Colors.ORANGE}WHY SAMSUNG PHONES BLOCK 'ALWAYS ALLOW' & HOW TO FIX IT:{Colors.RESET}
+
+  {Colors.BOLD}1. TURN OFF SAMSUNG AUTO BLOCKER (ONE UI 6 / 6.1):{Colors.RESET}
+     Go to: {Colors.WHITE}Settings > Security and privacy > Auto Blocker{Colors.RESET}
+     Turn {Colors.RED}Auto Blocker OFF{Colors.RESET} (or turn off "Block commands by USB cable").
+     *When enabled, Samsung silently drops the RSA popup so it never appears!*
+
+  {Colors.BOLD}2. UNLOCK PHONE & KEEP ON HOME SCREEN:{Colors.RESET}
+     Unlock your phone using fingerprint or PIN.
+     *Samsung Knox BLOCKS the authorization popup if the screen is locked!*
+
+  {Colors.BOLD}3. REVOKE OLD AUTHORIZATIONS & TOGGLE DEBUGGING:{Colors.RESET}
+     Go to: {Colors.WHITE}Settings > Developer options{Colors.RESET}
+     Tap: {Colors.WHITE}Revoke USB debugging authorizations > OK{Colors.RESET}
+     Toggle: {Colors.WHITE}USB debugging OFF{Colors.RESET}, wait 3 seconds, then turn it {Colors.GREEN}ON{Colors.RESET}.
+
+  {Colors.BOLD}4. SET USB DEFAULT TO FILE TRANSFER:{Colors.RESET}
+     In {Colors.WHITE}Settings > Developer options > Default USB configuration{Colors.RESET}
+     Select {Colors.GREEN}"Transferring files"{Colors.RESET} (not "Charging phone only").
+
+  {Colors.BOLD}5. OR PAIR WIRELESSLY (NO CABLE NEEDED // 100% SUCCESS):{Colors.RESET}
+     In {Colors.WHITE}Settings > Developer options > Wireless debugging > ON{Colors.RESET}
+     Tap {Colors.WHITE}"Pair device with pairing code"{Colors.RESET}
+     Run in CLI: {Colors.ORANGE}/pair <ip:port> <code>{Colors.RESET}
+""")
+
+
 def print_help():
     """Print the complete ULTRON CLI Slash Command Guide."""
     print(f"""
@@ -304,6 +374,7 @@ def print_help():
   {Colors.BOLD}{Colors.CYAN}📱 MOBILE DEVICE MATRIX COMMANDS:{Colors.RESET}
     {Colors.ORANGE}/devices{Colors.RESET}           Scan & display connected phones (Status, Battery, ID)
     {Colors.ORANGE}/pair [ip:port code]{Colors.RESET} Force pair USB phone or pair Android via Wi-Fi
+    {Colors.ORANGE}/diag{Colors.RESET}              Diagnose Samsung USB authorization & Auto Blocker
     {Colors.ORANGE}/unlock [pin]{Colors.RESET}      Wake & unlock connected phone screen (e.g. {Colors.GREY}/unlock 1234{Colors.RESET})
     {Colors.ORANGE}/lock{Colors.RESET}              Put connected phone screen to sleep / lock
     {Colors.ORANGE}/battery{Colors.RESET}           Query connected phone battery level & power status
@@ -362,6 +433,9 @@ async def execute_input(user_input: str):
         return
     elif lower in ("/devices", "/device", "devices"):
         await handle_devices_command()
+        return
+    elif lower in ("/diag", "diag", "/check"):
+        handle_diag_command()
         return
     elif lower.startswith("/pair") or lower in ("pair", "force pair"):
         await handle_pair_command(raw)
