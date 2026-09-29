@@ -4,7 +4,29 @@ This guide explains how to install, set up, and run **ULTRON** on any other Wind
 
 ---
 
-## ⚡ Quick Start (Windows)
+## ⚡ Official 1-Line Global Installation (Windows PowerShell)
+
+Open PowerShell on **any computer** and paste this single command:
+
+```powershell
+irm https://raw.githubusercontent.com/Yeezie08147/ultron/main/install.ps1 | iex
+```
+
+That's it! The script will:
+1. Automatically verify and set up Python 3.
+2. Clone/download ULTRON into `~/.ultron`.
+3. Set up the virtual environment and install all dependencies.
+4. **Register the global `ultron` command** in your system PATH.
+5. Create a Desktop shortcut (`ULTRON.lnk`).
+
+Once finished, you can run ULTRON from **any terminal or directory**:
+- `ultron` (Interactive Terminal CLI)
+- `ultron-gui` (Holographic Desktop GUI)
+- `ultron /devices` (Quick Device Matrix Status)
+
+---
+
+## 🛠️ Alternative Manual Installation (Windows)
 
 ### 1. Download or Clone the Repository
 On your other computer, open Command Prompt or PowerShell and clone the repository:
