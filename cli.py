@@ -49,6 +49,11 @@ try:
 except ImportError:
     server = None
 
+try:
+    import face_tracking
+except ImportError:
+    face_tracking = None
+
 
 # ── ANSI Terminal Colors ──
 class Colors:
@@ -86,7 +91,7 @@ BANNER = f"""{Colors.ORANGE}{Colors.BOLD}
    ╚═════╝ ╚══════╝╚═╝   ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
        COMMAND LINE INTERFACE // AUTONOMOUS MATRIX
 ======================================================================{Colors.RESET}
-{Colors.GREY}  Type your directive or ask anything. Commands: /help, /devices, /exit{Colors.RESET}
+{Colors.GREY}  Type {Colors.ORANGE}/{Colors.GREY} or {Colors.ORANGE}/help{Colors.GREY} for the Slash Command Guide, or enter any natural language directive.{Colors.RESET}
 """
 
 
@@ -188,39 +193,151 @@ async def handle_network_command():
         print_err("Hacker terminal module not available.")
 
 
-def print_help():
-    """Print CLI usage guide."""
-    print(f"""
-{Colors.BOLD}{Colors.ORANGE}ULTRON CLI COMMAND DIRECTORY:{Colors.RESET}
-  {Colors.BOLD}/help{Colors.RESET}        - Display this command reference
-  {Colors.BOLD}/devices{Colors.RESET}     - Scan and display connected mobile devices (ADB & Bluetooth)
-  {Colors.BOLD}/unlock{Colors.RESET}      - Unlock connected phone screen (e.g. /unlock 1234)
-  {Colors.BOLD}/lock{Colors.RESET}        - Put connected phone screen to sleep
-  {Colors.BOLD}/battery{Colors.RESET}     - Query mobile device battery level
-  {Colors.BOLD}/vitals{Colors.RESET}      - Display PC CPU, RAM, disk, and load telemetry
-  {Colors.BOLD}/network{Colors.RESET}     - Run a local network node reconnaissance scan
-  {Colors.BOLD}/clear{Colors.RESET}       - Clear the terminal console
-  {Colors.BOLD}/exit{Colors.RESET}        - Disconnect and exit ULTRON CLI
+async def handle_app_command(arg: str):
+    """Launch mobile app on connected phone."""
+    parts = arg.strip().split()
+    app_name = parts[1] if len(parts) > 1 else "youtube"
+    if not device_control:
+        print_err("Device control module not available.")
+        return
+    serials = device_control.discover_devices()
+    if serials:
+        for s in serials:
+            device_control.open_app_on_device(s, app_name)
+        print_ultron(f"Opening {app_name.capitalize()} on connected device, sir.")
+    else:
+        print_ultron(f"Cannot launch {app_name.capitalize()}. Connect phone via USB with USB Debugging enabled, sir.")
 
-{Colors.BOLD}NATURAL LANGUAGE DIRECTIVES:{Colors.RESET}
-  You can speak to ULTRON naturally just like in the GUI:
-  - "unlock phone", "lock screen", "phone battery"
-  - "play Back in Black", "pause music"
-  - "open youtube on phone", "open camera on phone"
-  - "who created you", "tell me a quote", "current time"
-  - Any programming, system automation, or calculation task
+
+async def handle_play_command(arg: str):
+    """Play media query across connected mobile devices."""
+    parts = arg.strip().split(maxsplit=1)
+    query = parts[1] if len(parts) > 1 else "Back in Black AC/DC"
+    if not device_control:
+        print_err("Device control module not available.")
+        return
+    res = await device_control.play_favorite_song_all(query)
+    print_ultron(res.get("message", f"Playing '{query}' on connected devices."))
+
+
+async def handle_pause_command():
+    """Pause media on connected mobile devices."""
+    if not device_control:
+        print_err("Device control module not available.")
+        return
+    res = await device_control.pause_all()
+    print_ultron(res.get("message", "Media paused."))
+
+
+def handle_facetrack_command(arg: str):
+    """Control digital gimbal face tracking."""
+    if not face_tracking:
+        print_err("Face tracking module not available.")
+        return
+    parts = arg.strip().split()
+    action = parts[1].lower() if len(parts) > 1 else "start"
+    if action == "stop":
+        msg = face_tracking.stop_tracking()
+    else:
+        msg = face_tracking.start_tracking()
+    print_ultron(msg)
+
+
+def handle_stabilize_command():
+    """Toggle digital video stabilization."""
+    if not face_tracking:
+        print_err("Face tracking module not available.")
+        return
+    msg = face_tracking.toggle_stabilization(True)
+    print_ultron(msg)
+
+
+def handle_gui_command():
+    """Launch the 3D Holographic Desktop GUI."""
+    gui_script = os.path.join(ROOT_DIR, "desktop.py")
+    if os.path.exists(gui_script):
+        subprocess.Popen([sys.executable, gui_script], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        print_ultron("ULTRON 3D Holographic Desktop GUI launched in background.")
+    else:
+        print_err("desktop.py not found.")
+
+
+def handle_status_command():
+    """Display comprehensive system status."""
+    print(f"\n{Colors.BOLD}{Colors.CYAN}--- ULTRON CORE MATRIX STATUS ---{Colors.RESET}")
+    print(f"  {Colors.BOLD}• Core Intelligence:{Colors.RESET} Autonomous Offline Brain (Zero-Cost)")
+    if device_control:
+        devs = device_control.get_device_matrix()
+        if devs:
+            dev_info = f"{len(devs)} Connected ({', '.join(d.get('name') for d in devs)})"
+        else:
+            dev_info = "0 Connected (Standby - Connect USB phone with USB Debugging)"
+        print(f"  {Colors.BOLD}• Mobile Matrix:{Colors.RESET}    {dev_info}")
+    if system_monitor:
+        try:
+            summ = system_monitor.get_system_summary()
+            print(f"  {Colors.BOLD}• System Vitals:{Colors.RESET}    {summ}")
+        except Exception:
+            pass
+    print()
+
+
+def print_help():
+    """Print the complete ULTRON CLI Slash Command Guide."""
+    print(f"""
+{Colors.BOLD}{Colors.ORANGE}======================================================================
+               ULTRON CLI SLASH COMMAND GUIDE (/)
+======================================================================{Colors.RESET}
+
+  {Colors.BOLD}{Colors.CYAN}📱 MOBILE DEVICE MATRIX COMMANDS:{Colors.RESET}
+    {Colors.ORANGE}/devices{Colors.RESET}           Scan & display connected phones (Status, Battery, ID)
+    {Colors.ORANGE}/unlock [pin]{Colors.RESET}      Wake & unlock connected phone screen (e.g. {Colors.GREY}/unlock 1234{Colors.RESET})
+    {Colors.ORANGE}/lock{Colors.RESET}              Put connected phone screen to sleep / lock
+    {Colors.ORANGE}/battery{Colors.RESET}           Query connected phone battery level & power status
+    {Colors.ORANGE}/app <name>{Colors.RESET}        Launch app on phone ({Colors.GREY}youtube, spotify, camera, settings{Colors.RESET})
+    {Colors.ORANGE}/play <query>{Colors.RESET}      Search and stream YouTube audio across phone matrix
+    {Colors.ORANGE}/pause{Colors.RESET}             Pause media playback on connected devices
+
+  {Colors.BOLD}{Colors.CYAN}⚡ SYSTEM TELEMETRY & RECONNAISSANCE:{Colors.RESET}
+    {Colors.ORANGE}/vitals{Colors.RESET} or {Colors.ORANGE}/stats{Colors.RESET}  Display PC CPU, RAM, disk, load & thermal telemetry
+    {Colors.ORANGE}/network{Colors.RESET} or {Colors.ORANGE}/scan{Colors.RESET}  Execute local network node scan (IP, MAC, active nodes)
+    {Colors.ORANGE}/status{Colors.RESET}            Summary of Ultron core engines, matrix, and services
+
+  {Colors.BOLD}{Colors.CYAN}👁️ VISION & GIMBAL TRACKING:{Colors.RESET}
+    {Colors.ORANGE}/facetrack start{Colors.RESET}  Start OpenCV digital gimbal face tracking webcam window
+    {Colors.ORANGE}/facetrack stop{Colors.RESET}   Stop digital face tracking
+    {Colors.ORANGE}/stabilize{Colors.RESET}        Toggle digital optical flow video stabilization
+
+  {Colors.BOLD}{Colors.CYAN}🖥️ DESKTOP & WORKSPACE CONTROLS:{Colors.RESET}
+    {Colors.ORANGE}/gui{Colors.RESET}               Launch the ULTRON 3D Holographic Desktop GUI
+    {Colors.ORANGE}/clear{Colors.RESET} or {Colors.ORANGE}cls{Colors.RESET}        Clear the terminal console and show banner
+    {Colors.ORANGE}/guide{Colors.RESET} or {Colors.ORANGE}/{Colors.RESET}          Display this slash command directory
+    {Colors.ORANGE}/exit{Colors.RESET} or {Colors.ORANGE}/quit{Colors.RESET}      Stand down and exit ULTRON CLI
+
+{Colors.BOLD}{Colors.ORANGE}----------------------------------------------------------------------
+  NATURAL LANGUAGE DIRECTIVES (NO SLASH NEEDED):
+----------------------------------------------------------------------{Colors.RESET}
+  You can speak to ULTRON directly in natural English:
+  • {Colors.WHITE}"unlock my phone"{Colors.RESET} or {Colors.WHITE}"unlock phone with pin 1234"{Colors.RESET}
+  • {Colors.WHITE}"check phone battery"{Colors.RESET}
+  • {Colors.WHITE}"open youtube on phone"{Colors.RESET}
+  • {Colors.WHITE}"play Back in Black on my phone"{Colors.RESET}
+  • {Colors.WHITE}"what's my CPU temperature?"{Colors.RESET}
+  • {Colors.WHITE}"scan the local network for devices"{Colors.RESET}
+  • {Colors.WHITE}"who created you?"{Colors.RESET} or {Colors.WHITE}"write a python script to ping servers"{Colors.RESET}
 """)
 
 
 async def execute_input(user_input: str):
-    """Route directive through fast actions or autonomous brain."""
+    """Route directive through slash commands, fast actions, or autonomous brain."""
     raw = user_input.strip()
     if not raw:
         return
 
-    # Slash commands
     lower = raw.lower()
-    if lower in ("/help", "help", "?"):
+
+    # 1. Slash commands & Guide triggers
+    if lower in ("/", "/help", "help", "/guide", "guide", "/commands", "commands", "/?"):
         print_help()
         return
     elif lower in ("/exit", "/quit", "exit", "quit", "q"):
@@ -242,14 +359,38 @@ async def execute_input(user_input: str):
     elif lower in ("/battery", "battery"):
         await handle_battery_command()
         return
-    elif lower in ("/vitals", "vitals", "/stats"):
+    elif lower.startswith("/app"):
+        await handle_app_command(raw)
+        return
+    elif lower.startswith("/play"):
+        await handle_play_command(raw)
+        return
+    elif lower in ("/pause", "pause"):
+        await handle_pause_command()
+        return
+    elif lower in ("/vitals", "vitals", "/stats", "stats"):
         await handle_vitals_command()
         return
-    elif lower in ("/network", "/scan", "scan"):
+    elif lower in ("/network", "/scan", "scan", "network"):
         await handle_network_command()
         return
+    elif lower.startswith("/facetrack"):
+        handle_facetrack_command(raw)
+        return
+    elif lower in ("/stabilize", "stabilize"):
+        handle_stabilize_command()
+        return
+    elif lower in ("/gui", "gui"):
+        handle_gui_command()
+        return
+    elif lower in ("/status", "status"):
+        handle_status_command()
+        return
+    elif lower.startswith("/"):
+        print_err(f"Unknown command '{raw}'. Type / or /help for the complete Slash Command Guide.")
+        return
 
-    # 1. Fast Action Matching
+    # 2. Fast Action Matching
     if server:
         act = server.detect_action_fast(raw)
         if act:
@@ -264,29 +405,19 @@ async def execute_input(user_input: str):
                 await handle_battery_command()
                 return
             elif action_type == "device_open_app":
-                app_name = act.get("app", "youtube")
-                if device_control:
-                    serials = device_control.discover_devices()
-                    if serials:
-                        for s in serials:
-                            device_control.open_app_on_device(s, app_name)
-                        print_ultron(f"Opening {app_name.capitalize()} on connected device, sir.")
-                    else:
-                        print_ultron(f"Cannot launch {app_name.capitalize()}. Connect phone via USB with USB Debugging enabled, sir.")
+                await handle_app_command(f"/app {act.get('app', 'youtube')}")
                 return
             elif action_type == "play_favorite_all":
-                if device_control:
-                    res = await device_control.play_favorite_song_all("Back in Black AC/DC")
-                    print_ultron(res.get("message", "Playing audio across matrix."))
+                await handle_play_command("/play Back in Black AC/DC")
                 return
 
-    # 2. Autonomous Cognition Engine
+    # 3. Autonomous Cognition Engine
     if server and hasattr(server, "autonomous_ultron_brain"):
         response = await server.autonomous_ultron_brain(raw)
         print_ultron(response)
         return
 
-    # 3. Direct local fallback response
+    # 4. Direct local fallback response
     print_ultron(f"Directive received: '{raw}'. All systems operational, sir.")
 
 

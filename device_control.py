@@ -145,13 +145,11 @@ _PNP_LOCK = threading.Lock()
 
 
 def _fetch_pnp_mobile_devices() -> List[Dict[str, Any]]:
-    """Query Windows PnP for connected smartphones via Bluetooth or USB MTP."""
+    """Query Windows PnP strictly for physically connected smartphones via USB (MTP or Android USB)."""
     ps_cmd = (
         'Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | Where-Object { '
         '($_.Class -eq "WPD") -or '
-        '($_.Class -eq "AndroidUsbDeviceClass") -or '
-        '($_.InstanceId -like "*0000111F*") -or '
-        '($_.InstanceId -like "*0000112F*") '
+        '($_.Class -eq "AndroidUsbDeviceClass") '
         '} | Select-Object FriendlyName, Class, InstanceId | ConvertTo-Json -Compress'
     )
     devices = []
@@ -176,29 +174,21 @@ def _fetch_pnp_mobile_devices() -> List[Dict[str, Any]]:
                 cid = item.get("Class", "").strip()
                 iid = item.get("InstanceId", "").strip()
                 
-                # Ignore generic services
-                if not fname or "Phonebook Access" in fname or "Adapter" in fname:
+                # Filter out system drives, flash drives, card readers
+                if not fname or any(skip in fname.lower() for skip in ["card reader", "flash drive", "generic usb", "mass storage"]):
                     continue
                 
-                # Clean name: remove Bluetooth suffixes
-                clean_name = re.sub(r"\s*(Hands-Free HF|Avrcp Transport|A2DP SNK|Audio).*$", "", fname, flags=re.IGNORECASE).strip()
-                if not clean_name or clean_name in seen_names:
+                if fname in seen_names:
                     continue
-                seen_names.add(clean_name)
+                seen_names.add(fname)
                 
-                # Extract Bluetooth MAC if present
-                mac_match = re.search(r"DEV_([0-9A-Fa-f]{12})", iid)
-                if not mac_match:
-                    mac_match = re.search(r"&([0-9A-Fa-f]{12})_", iid)
-                serial_repr = f"BT:{mac_match.group(1)}" if mac_match else ("USB:MTP" if cid == "WPD" else "Android USB")
-                
-                is_bt = "0000111F" in iid or "0000112F" in iid or "BTHENUM" in iid
+                serial_repr = "USB:MTP" if cid == "WPD" else "Android USB"
                 devices.append({
-                    "name": clean_name,
+                    "name": fname,
                     "class": cid,
                     "instance_id": iid,
                     "serial": serial_repr,
-                    "is_bluetooth": is_bt
+                    "is_bluetooth": False
                 })
     except Exception as e:
         log.debug(f"PnP query error: {e}")
@@ -248,9 +238,18 @@ def get_device_matrix() -> List[Dict[str, Any]]:
             status = dev["status"]
             
             if status == "device":
+                marketname = _adb("shell", "getprop", "ro.product.marketname", serial=serial)
+                if not marketname:
+                    marketname = _adb("shell", "getprop", "ro.sem.product.model", serial=serial)
                 model = _adb("shell", "getprop", "ro.product.model", serial=serial)
                 brand = _adb("shell", "getprop", "ro.product.brand", serial=serial)
-                display_name = f"{brand.capitalize()} {model}" if (brand and model) else (model or f"Device {i+1}")
+                
+                if marketname:
+                    display_name = marketname
+                elif brand and model:
+                    display_name = f"{brand.capitalize()} {model}"
+                else:
+                    display_name = model or f"Device {i+1}"
 
                 battery = 100
                 try:
@@ -300,32 +299,20 @@ def get_device_matrix() -> List[Dict[str, Any]]:
                 })
         return matrix
 
-    # 2. Fallback: Windows PnP (Bluetooth & USB MTP)
+    # 2. Fallback: Windows PnP (Physical USB Connected Phone without USB Debugging)
     pnp_devices = _get_cached_pnp_devices()
     if pnp_devices:
         for i, pnp in enumerate(pnp_devices):
-            if pnp.get("is_bluetooth"):
-                matrix.append({
-                    "id": i + 1,
-                    "name": pnp["name"],
-                    "serial": pnp["serial"],
-                    "status": "BLUETOOTH LINKED",
-                    "battery": 0,
-                    "media": "Bluetooth Audio Linked",
-                    "real": True,
-                    "connection": "bluetooth"
-                })
-            else:
-                matrix.append({
-                    "id": i + 1,
-                    "name": pnp["name"],
-                    "serial": pnp["serial"],
-                    "status": "ENABLE USB DEBUGGING",
-                    "battery": 0,
-                    "media": "MTP Storage Connected",
-                    "real": True,
-                    "connection": "usb_pnp"
-                })
+            matrix.append({
+                "id": i + 1,
+                "name": pnp["name"],
+                "serial": pnp["serial"],
+                "status": "ENABLE USB DEBUGGING",
+                "battery": 0,
+                "media": "MTP Storage Connected",
+                "real": True,
+                "connection": "usb_pnp"
+            })
         return matrix
 
     return []
@@ -428,21 +415,15 @@ async def unlock_all(pin: str = "") -> dict:
             "message": f"Phone detected with status '{all_devices[0]['status']}'. Please verify the USB connection, sir."
         }
 
-    # 3. PnP Fallback (Bluetooth or USB MTP)
+    # 3. PnP Fallback (Physical USB Connected Phone without USB Debugging)
     pnp_devices = _get_cached_pnp_devices()
     if pnp_devices:
         first = pnp_devices[0]
         name = first.get("name", "Phone")
-        if first.get("is_bluetooth"):
-            return {
-                "success": False,
-                "count": 0,
-                "message": f"Phone '{name}' is linked via Bluetooth. To unlock the screen, connect via USB cable with USB Debugging enabled in Developer Options, sir."
-            }
         return {
             "success": False,
             "count": 0,
-            "message": f"Phone '{name}' is connected via USB. To enable screen unlocking, please turn ON USB Debugging in your phone's Developer Options, sir."
+            "message": f"Phone '{name}' is connected via USB. To enable screen unlocking, please turn ON USB Debugging in Settings > Developer Options on your phone, sir."
         }
 
     # 4. No device found
@@ -467,7 +448,7 @@ async def lock_all() -> dict:
         pnp_devs = _get_cached_pnp_devices()
         if pnp_devs:
             name = pnp_devs[0].get("name", "Phone")
-            return {"success": False, "count": 0, "message": f"Phone '{name}' is connected via Bluetooth only. Connect via USB with USB Debugging to lock the display remotely, sir."}
+            return {"success": False, "count": 0, "message": f"Phone '{name}' is connected via USB. Turn ON USB Debugging in Settings > Developer Options to control the screen remotely, sir."}
         return {"success": False, "count": 0, "message": "No mobile devices connected, sir."}
 
     tasks = [asyncio.to_thread(lock_device, s) for s in active_serials]
@@ -488,9 +469,10 @@ async def get_battery_status() -> dict:
     if active_serials:
         reports = []
         for s in active_serials:
+            marketname = _adb("shell", "getprop", "ro.product.marketname", serial=s)
             model = _adb("shell", "getprop", "ro.product.model", serial=s) or "Device"
             brand = _adb("shell", "getprop", "ro.product.brand", serial=s) or ""
-            name = f"{brand.capitalize()} {model}".strip()
+            name = marketname or f"{brand.capitalize()} {model}".strip()
             
             bat_level = "Unknown"
             try:
@@ -512,7 +494,7 @@ async def get_battery_status() -> dict:
         name = pnp_devs[0].get("name", "Phone")
         return {
             "success": True,
-            "message": f"Phone '{name}' is linked via Bluetooth. Connect via USB with USB Debugging enabled to read exact battery telemetry, sir."
+            "message": f"Phone '{name}' is connected via USB. Enable USB Debugging in Developer Options to read battery telemetry, sir."
         }
 
     return {
