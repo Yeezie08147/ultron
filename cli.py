@@ -15,6 +15,14 @@ import subprocess
 from datetime import datetime
 from typing import Optional, Dict, Any
 
+# Ensure UTF-8 console output encoding on Windows
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # Ensure workspace root is in path
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 if ROOT_DIR not in sys.path:
@@ -283,7 +291,12 @@ async def execute_input(user_input: str):
 
 
 async def cli_main():
-    """Main REPL loop."""
+    """Main CLI entrypoint: one-shot command or interactive REPL."""
+    if len(sys.argv) > 1:
+        cmd = " ".join(sys.argv[1:]).strip()
+        await execute_input(cmd)
+        return
+
     print(BANNER)
     
     # Quick startup telemetry check
