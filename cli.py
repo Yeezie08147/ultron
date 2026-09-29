@@ -229,6 +229,18 @@ async def handle_pause_command():
     print_ultron(res.get("message", "Media paused."))
 
 
+async def handle_pair_command(arg: str = ""):
+    """Execute mobile force-pair / authorization recovery or wireless pairing."""
+    if not device_control:
+        print_err("Device control module not available.")
+        return
+    parts = arg.strip().split()
+    target = parts[1] if len(parts) > 1 and ":" in parts[1] else ""
+    code = parts[2] if len(parts) > 2 else ""
+    res = await device_control.force_pair(target=target, code=code)
+    print_ultron(res.get("message", "Pairing sequence executed."))
+
+
 def handle_facetrack_command(arg: str):
     """Control digital gimbal face tracking."""
     if not face_tracking:
@@ -291,6 +303,7 @@ def print_help():
 
   {Colors.BOLD}{Colors.CYAN}📱 MOBILE DEVICE MATRIX COMMANDS:{Colors.RESET}
     {Colors.ORANGE}/devices{Colors.RESET}           Scan & display connected phones (Status, Battery, ID)
+    {Colors.ORANGE}/pair [ip:port code]{Colors.RESET} Force pair USB phone or pair Android via Wi-Fi
     {Colors.ORANGE}/unlock [pin]{Colors.RESET}      Wake & unlock connected phone screen (e.g. {Colors.GREY}/unlock 1234{Colors.RESET})
     {Colors.ORANGE}/lock{Colors.RESET}              Put connected phone screen to sleep / lock
     {Colors.ORANGE}/battery{Colors.RESET}           Query connected phone battery level & power status
@@ -350,6 +363,9 @@ async def execute_input(user_input: str):
     elif lower in ("/devices", "/device", "devices"):
         await handle_devices_command()
         return
+    elif lower.startswith("/pair") or lower in ("pair", "force pair"):
+        await handle_pair_command(raw)
+        return
     elif lower.startswith("/unlock"):
         await handle_unlock_command(raw)
         return
@@ -397,6 +413,9 @@ async def execute_input(user_input: str):
             action_type = act.get("action")
             if action_type in ("device_unlock_all", "unlock_all_devices"):
                 await handle_unlock_command(act.get("pin", ""))
+                return
+            elif action_type == "device_force_pair":
+                await handle_pair_command(f"/pair {act.get('target', '')} {act.get('code', '')}")
                 return
             elif action_type == "device_lock_all":
                 await handle_lock_command()

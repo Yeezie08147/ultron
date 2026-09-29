@@ -1932,6 +1932,17 @@ def detect_action_fast(text: str) -> dict | None:
         pin_val = pin_match.group(1) if pin_match else ""
         return {"action": "device_unlock_all", "pin": pin_val}
 
+    # ── Mobile Phone Force Pair / Authorization Triggers ──
+    if any(p in t for p in [
+        "force pair", "pair phone", "pair mobile", "pair device", "force pair phone",
+        "fix unauthorized", "fix unauthorized phone", "authorize phone", "reconnect phone",
+        "connect phone"
+    ]):
+        pair_match = re.search(r'([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+)\s+([0-9]{6})', t)
+        if pair_match:
+            return {"action": "device_force_pair", "target": pair_match.group(1), "code": pair_match.group(2)}
+        return {"action": "device_force_pair", "target": "", "code": ""}
+
     # ── Mobile Phone Lock Triggers ──
     if any(p in t for p in [
         "lock phone", "lock my phone", "lock the phone", "lock mobile", "lock my mobile",
@@ -3501,6 +3512,10 @@ async def voice_handler(ws: WebSocket):
                             res = await device_control.lock_all()
                             await ws.send_json({"type": "device_matrix_update", "devices": device_control.get_device_matrix()})
                             response_text = res.get("message", "Screen locked, sir.")
+                        elif action["action"] == "device_force_pair":
+                            res = await device_control.force_pair(target=action.get("target", ""), code=action.get("code", ""))
+                            await ws.send_json({"type": "device_matrix_update", "devices": device_control.get_device_matrix()})
+                            response_text = res.get("message", "Pairing command executed, sir.")
                         elif action["action"] == "phone_battery":
                             res = await device_control.get_battery_status()
                             response_text = res.get("message", "Battery telemetry reported.")
@@ -4009,6 +4024,13 @@ async def api_play_devices(payload: dict = None):
     res = await device_control.play_favorite_song_all(song)
     return res
 
+@app.post("/api/devices/pair")
+async def api_pair_devices(payload: dict = None):
+    target = (payload or {}).get("target", "")
+    code = (payload or {}).get("code", "")
+    res = await device_control.force_pair(target=target, code=code)
+    return res
+
 @app.get("/api/screen/state")
 async def api_screen_state():
     return _SCREEN_STATE
@@ -4115,6 +4137,9 @@ async def api_voice_inject(payload: dict):
             return {"success": True, "action": act, "result": res}
         elif act and act.get("action") == "phone_battery":
             res = await device_control.get_battery_status()
+            return {"success": True, "action": act, "result": res}
+        elif act and act.get("action") == "device_force_pair":
+            res = await device_control.force_pair(target=act.get("target", ""), code=act.get("code", ""))
             return {"success": True, "action": act, "result": res}
         return {"success": True, "dispatched": 0, "text": text}
 

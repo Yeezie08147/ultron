@@ -79,7 +79,7 @@ function renderDeviceMatrix(devices: any[]) {
       <div class="matrix-empty">
         <div class="matrix-empty-icon">📱</div>
         <div class="matrix-empty-title">NO DEVICES CONNECTED</div>
-        <div class="matrix-empty-sub">Connect Android phone via USB (with USB Debugging) or Bluetooth to link with ULTRON</div>
+        <div class="matrix-empty-sub">Connect Android phone via USB (with USB Debugging) or Wireless Debugging to link with ULTRON</div>
       </div>
     `;
     return;
@@ -93,8 +93,13 @@ function renderDeviceMatrix(devices: any[]) {
     else if (st.includes("BLUETOOTH")) badgeClass = "bluetooth";
     else if (st.includes("OFFLINE")) badgeClass = "offline";
 
-    const bat = d.battery ? `🔋 ${d.battery}%` : (d.connection === "bluetooth" ? "📶 Bluetooth" : "🔋 --");
+    const bat = d.battery ? `🔋 ${d.battery}%` : "🔋 --";
     const media = d.media && d.media !== "Standby" ? ` • ${d.media}` : "";
+    const isUnauth = st.includes("UNAUTHORIZED") || st.includes("ALLOW");
+    const pairBtn = isUnauth
+      ? `<button class="btn-matrix-force-pair" data-serial="${d.serial}" style="margin-top:6px; width:100%; padding:5px 8px; font-size:11px; font-weight:700; background:rgba(255,170,30,0.25); border:1px solid #FFAA1E; color:#FFAA1E; border-radius:4px; cursor:pointer;">⚡ FORCE PAIR / POPUP KEY</button>`
+      : "";
+
     return `
       <div class="matrix-card">
         <div class="matrix-card-top">
@@ -102,9 +107,26 @@ function renderDeviceMatrix(devices: any[]) {
           <span class="dev-badge ${badgeClass}">${d.status}</span>
         </div>
         <div class="matrix-card-sub">${d.serial || "DEVICE"} • ${bat}${media}</div>
+        ${pairBtn}
       </div>
     `;
   }).join("");
+
+  // Attach force-pair button listeners
+  matrixListEl.querySelectorAll(".btn-matrix-force-pair").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const b = e.target as HTMLButtonElement;
+      b.textContent = "FORCING HANDSHAKE...";
+      try {
+        const res = await fetch("/api/devices/pair", { method: "POST" });
+        const data = await res.json();
+        setActionBanner(data.message || "Handshake triggered. Look at your phone screen.");
+      } catch (err) {
+        setActionBanner("Handshake request failed.");
+      }
+    });
+  });
 }
 
 const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
