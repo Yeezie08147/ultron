@@ -31,6 +31,37 @@ def _get_pins() -> List[str]:
     return pins
 
 
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def save_verified_device_pin(pin: str) -> bool:
+    """Save a verified working PIN to .env and active runtime environment."""
+    clean_pin = pin.strip()
+    if not clean_pin or not clean_pin.isdigit():
+        return False
+    os.environ["DEVICE_PIN"] = clean_pin
+    
+    env_path = os.path.join(ROOT_DIR, ".env")
+    try:
+        content = ""
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        
+        if "DEVICE_PIN=" in content:
+            new_content = re.sub(r'DEVICE_PIN=.*', f'DEVICE_PIN={clean_pin}', content)
+        else:
+            new_content = content.rstrip() + f"\nDEVICE_PIN={clean_pin}\n"
+            
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        log.info(f"Verified correct device PIN saved to .env")
+        return True
+    except Exception as e:
+        log.warning(f"Could not persist DEVICE_PIN to .env: {e}")
+        return False
+
+
 def _adb(*args, serial: str = "") -> str:
     """Run an ADB command synchronously and return stdout. Never kills the server."""
     cmd = ["adb"]
@@ -354,16 +385,24 @@ def unlock_device(serial: str, pin: str = "") -> bool:
         time.sleep(0.1)
         _adb("shell", "input", "keyevent", "3", serial=serial)
 
-        # Step 5: Silent background PIN entry if configured in .env
+        # Step 5: Silent background PIN entry if configured in .env or passed
         actual_pin = pin or os.getenv("DEVICE_PIN", "")
         if actual_pin:
             _adb("shell", "input", "text", actual_pin, serial=serial)
             time.sleep(0.15)
             _adb("shell", "input", "keyevent", "66", serial=serial)   # KEYCODE_ENTER
             _adb("shell", "input", "keyevent", "160", serial=serial)  # KEYCODE_NUMPAD_ENTER
-            time.sleep(0.15)
+            time.sleep(0.2)
             _adb("shell", "input", "keyevent", "3", serial=serial)   # Return to home
             
+            # Verify if unlock was genuinely successful before capturing/saving the PIN
+            time.sleep(0.35)
+            if not _is_keyguard_locked(serial):
+                save_verified_device_pin(actual_pin)
+                log.info(f"Verified working PIN for {serial} saved to .env")
+            else:
+                log.warning(f"Keyguard still locked on {serial}. PIN '{actual_pin}' was incorrect — discarded.")
+
         # Step 6: Keep screen awake while plugged into USB so it never locks again
         try:
             _adb("shell", "settings", "put", "global", "stay_on_while_plugged_in", "3", serial=serial)
