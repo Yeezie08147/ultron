@@ -241,6 +241,15 @@ async def handle_pair_command(arg: str = ""):
     print_ultron(res.get("message", "Pairing sequence executed."))
 
 
+async def handle_bridge_command():
+    """Execute zero-code wireless bridge (USB -> TCP/IP -> Wi-Fi)."""
+    if not device_control:
+        print_err("Device control module not available.")
+        return
+    res = await device_control.enable_wireless_bridge()
+    print_ultron(res.get("message", "Bridge sequence executed."))
+
+
 async def handle_wifi_command(arg: str = ""):
     """Manage Wi-Fi network interface & auto-reconnect."""
     if not device_control:
@@ -249,7 +258,10 @@ async def handle_wifi_command(arg: str = ""):
     parts = arg.strip().split()
     subcmd = parts[1].lower() if len(parts) > 1 else "status"
     
-    if subcmd in ("reconnect", "connect"):
+    if subcmd in ("bridge", "auto", "skip"):
+        res = await device_control.enable_wireless_bridge()
+        print_ultron(res.get("message", "Bridge sequence executed."))
+    elif subcmd in ("reconnect", "connect"):
         target_profile = parts[2] if len(parts) > 2 else ""
         res = device_control.reconnect_wifi(target_profile)
         print_ultron(res.get("message", "Wi-Fi command executed."))
@@ -267,7 +279,7 @@ async def handle_wifi_command(arg: str = ""):
         profs = st.get("profiles", [])
         if profs:
             print(f"  {Colors.BOLD}• Saved Profiles:{Colors.RESET}  {', '.join(profs)}")
-        print(f"\n{Colors.GREY}  Commands: {Colors.ORANGE}/wifi reconnect [profile]{Colors.GREY} | {Colors.ORANGE}/wifi scan [phone_ip]{Colors.RESET}\n")
+        print(f"\n{Colors.GREY}  Commands: {Colors.ORANGE}/bridge{Colors.GREY} (skip pairing) | {Colors.ORANGE}/wifi reconnect [profile]{Colors.GREY} | {Colors.ORANGE}/wifi scan [phone_ip]{Colors.RESET}\n")
 
 
 def handle_facetrack_command(arg: str):
@@ -402,10 +414,11 @@ def print_help():
 
   {Colors.BOLD}{Colors.CYAN}📱 MOBILE DEVICE MATRIX COMMANDS:{Colors.RESET}
     {Colors.ORANGE}/devices{Colors.RESET}           Scan & display connected phones (Status, Battery, ID)
+    {Colors.ORANGE}/bridge{Colors.RESET}            Auto-switch USB phone to persistent Wi-Fi (Skips pairing process)
     {Colors.ORANGE}/pair [scan|ip:port]{Colors.RESET} Force pair USB, auto-scan rotating Wi-Fi ports, or pair
     {Colors.ORANGE}/wifi [status|reconnect]{Colors.RESET} Reconnect host Wi-Fi or auto-scan wireless phone
     {Colors.ORANGE}/diag{Colors.RESET}              Diagnose Samsung USB authorization & Auto Blocker
-    {Colors.ORANGE}/unlock [pin]{Colors.RESET}      Wake & unlock connected phone screen (e.g. {Colors.GREY}/unlock 1234{Colors.RESET})
+    {Colors.ORANGE}/unlock [pin]{Colors.RESET}      Unlock screen (Auto-types saved PIN or saves new working PIN)
     {Colors.ORANGE}/lock{Colors.RESET}              Put connected phone screen to sleep / lock
     {Colors.ORANGE}/battery{Colors.RESET}           Query connected phone battery level & power status
     {Colors.ORANGE}/app <name>{Colors.RESET}        Launch app on phone ({Colors.GREY}youtube, spotify, camera, settings{Colors.RESET})
@@ -466,6 +479,9 @@ async def execute_input(user_input: str):
         return
     elif lower in ("/diag", "diag", "/check"):
         handle_diag_command()
+        return
+    elif lower in ("/bridge", "bridge", "/tcpip", "tcpip"):
+        await handle_bridge_command()
         return
     elif lower.startswith("/pair") or lower in ("pair", "force pair"):
         await handle_pair_command(raw)

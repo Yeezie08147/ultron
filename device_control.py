@@ -22,16 +22,27 @@ from typing import Optional, Dict, List, Tuple, Any
 log = logging.getLogger("ultron.devices")
 
 # ── Device PINs from .env (DEVICE_PIN, DEVICE_PIN_1, etc.) ──
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 def _get_pins() -> List[str]:
     pins = []
     default = os.getenv("DEVICE_PIN", "")
+    if not default:
+        env_path = os.path.join(ROOT_DIR, ".env")
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip().startswith("DEVICE_PIN="):
+                            default = line.strip().split("=", 1)[1].strip()
+                            os.environ["DEVICE_PIN"] = default
+                            break
+            except Exception:
+                pass
     for i in range(1, 6):
         pin = os.getenv(f"DEVICE_PIN_{i}", default)
         pins.append(pin)
     return pins
-
-
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def save_verified_device_pin(pin: str) -> bool:
@@ -353,13 +364,13 @@ def get_device_matrix() -> List[Dict[str, Any]]:
 
 def unlock_device(serial: str, pin: str = "") -> bool:
     """
-    Resilient NO-PIN / Zero-friction screen unlock:
+    Resilient screen unlock sequence:
       1. KEYCODE_WAKEUP (224) - Wakes display without toggling off if already on
       2. wm dismiss-keyguard - Native Android WindowManager keyguard dismissal
-      3. Dynamic full-height swipe up (85% height to 15% height, 200ms)
-      4. KEYCODE_HOME (3) - Bypasses swipe-to-unlock and Smart Lock directly to home screen
-      5. Silent background PIN entry ONLY if configured in .env or passed (no user prompt needed)
-      6. Automatic stay-awake optimization (stay_on_while_plugged_in = 3)
+      3. Fluid vertical swipe (85% height to 15% height, 350ms) for Swipe/Smart-Lock
+      4. KEYCODE_HOME (3) and KEYCODE_MENU (82)
+      5. Silent background PIN entry if configured in .env or passed
+      6. Verifies keyguard state — returns True only if phone is genuinely unlocked
     """
     try:
         # Step 1: Wake display safely
@@ -375,18 +386,21 @@ def unlock_device(serial: str, pin: str = "") -> bool:
         cx = w // 2
         y_start = int(h * 0.85)
         y_end = int(h * 0.15)
-        _adb("shell", "input", "swipe", str(cx), str(y_start), str(cx), str(y_end), "200", serial=serial)
+        _adb("shell", "input", "swipe", str(cx), str(y_start), str(cx), str(y_end), "350", serial=serial)
         time.sleep(0.2)
         
         # Step 4: Press KEYCODE_HOME (3) and KEYCODE_MENU (82)
-        # On swipe-lock or Smart-Lock phones, this immediately opens the launcher home screen
         _adb("shell", "input", "keyevent", "3", serial=serial)
         _adb("shell", "input", "keyevent", "82", serial=serial)
         time.sleep(0.1)
         _adb("shell", "input", "keyevent", "3", serial=serial)
 
         # Step 5: Silent background PIN entry if configured in .env or passed
-        actual_pin = pin or os.getenv("DEVICE_PIN", "")
+        actual_pin = pin
+        if not actual_pin:
+            pins = _get_pins()
+            actual_pin = pins[0] if pins and pins[0] else ""
+
         if actual_pin:
             _adb("shell", "input", "text", actual_pin, serial=serial)
             time.sleep(0.15)
@@ -409,7 +423,13 @@ def unlock_device(serial: str, pin: str = "") -> bool:
         except Exception:
             pass
 
-        log.info(f"Successfully processed No-PIN unlock sequence on device {serial}")
+        # Final keyguard verification: return True ONLY if genuinely unlocked
+        time.sleep(0.2)
+        if _is_keyguard_locked(serial):
+            log.info(f"Device {serial} keyguard is still locked (requires PIN).")
+            return False
+
+        log.info(f"Successfully unlocked device {serial}")
         return True
     except Exception as e:
         log.error(f"Failed to unlock {serial}: {e}")
@@ -434,6 +454,9 @@ async def force_pair(target: str = "", code: str = "") -> dict:
     2. Wireless pairing: adb pair <target> <code> followed by adb connect <target>
     3. USB pairing: adb reconnect to force the 'Allow USB debugging' prompt onto the phone screen.
     """
+    if target.lower() in ("bridge", "tcpip", "skip"):
+        return await enable_wireless_bridge(serial=code)
+
     if target.lower() in ("scan", "auto", "wifi"):
         return await auto_connect_wireless_adb(target_ip=code)
 
@@ -512,13 +535,31 @@ async def unlock_all(pin: str = "") -> dict:
             
         results = await asyncio.gather(*tasks, return_exceptions=True)
         success_count = sum(1 for r in results if r is True)
-        count_str = f"All {len(active_serials)}" if len(active_serials) > 1 else "1"
-        return {
-            "success": success_count > 0,
-            "count": success_count,
-            "total": len(active_serials),
-            "message": f"Checking. One second. {count_str} device{'s' if len(active_serials) > 1 else ''} unlocked with zero PIN, sir."
-        }
+        
+        if success_count > 0:
+            count_str = f"All {len(active_serials)}" if len(active_serials) > 1 else "1"
+            return {
+                "success": True,
+                "count": success_count,
+                "total": len(active_serials),
+                "message": f"{count_str} device{'s' if len(active_serials) > 1 else ''} screen unlocked and active, sir."
+            }
+        else:
+            saved_pin = pin or (pins[0] if pins and pins[0] else "")
+            if not saved_pin:
+                return {
+                    "success": False,
+                    "count": 0,
+                    "total": len(active_serials),
+                    "message": "Screen illuminated, but your phone requires a PIN/password to unlock. Type '/unlock <your_pin>' once — Ultron will save it and auto-type it silently in the future so you never have to type it again, sir."
+                }
+            else:
+                return {
+                    "success": False,
+                    "count": 0,
+                    "total": len(active_serials),
+                    "message": f"Screen illuminated, but the PIN was rejected by Android. Check your PIN or type '/unlock <correct_pin>', sir."
+                }
 
     # 2. Unauthorized ADB device detected -> actively force prompt!
     if all_devices:
@@ -824,12 +865,129 @@ def probe_device_wireless_port(ip: str, port_range: Tuple[int, int] = (35000, 46
     return found_port
 
 
+def get_device_wifi_ip(serial: str = "") -> Optional[str]:
+    """Retrieve the connected Android phone's local Wi-Fi IP address."""
+    # 1. Try ip -f inet addr show wlan0
+    out = _adb("shell", "ip", "-f", "inet", "addr", "show", "wlan0", serial=serial)
+    m = re.search(r'inet\s+(\d{1,3}(?:\.\d{1,3}){3})', out)
+    if m:
+        return m.group(1)
+    
+    # 2. Try ip route
+    out = _adb("shell", "ip", "route", serial=serial)
+    m = re.search(r'src\s+(\d{1,3}(?:\.\d{1,3}){3})', out)
+    if m:
+        return m.group(1)
+        
+    # 3. Try getprop
+    out = _adb("shell", "getprop", "dhcp.wlan0.ipaddress", serial=serial)
+    if out and re.match(r'^\d{1,3}(?:\.\d{1,3}){3}$', out.strip()):
+        return out.strip()
+        
+    return None
+
+
+async def enable_wireless_bridge(serial: str = "") -> dict:
+    """
+    Skip the pairing process completely:
+    Converts USB-connected phone to permanent TCP/IP Wi-Fi mode (adb tcpip 5555),
+    saves phone IP to .env, and connects wirelessly.
+    Allows user to unplug USB cable with 100% wireless control active!
+    """
+    serials = discover_devices()
+    target_serial = serial or (serials[0] if serials else "")
+    if not target_serial:
+        return {
+            "success": False,
+            "message": "No USB phone detected. Connect your phone via USB once with USB debugging ON to auto-bridge to Wi-Fi, sir."
+        }
+
+    # Query device Wi-Fi IP
+    phone_ip = await asyncio.to_thread(get_device_wifi_ip, target_serial)
+    if not phone_ip:
+        return {
+            "success": False,
+            "message": "Could not determine phone's Wi-Fi IP. Ensure your phone is connected to the same Wi-Fi network as this PC, sir."
+        }
+
+    # Enable TCP/IP mode on port 5555
+    log.info(f"Switching {target_serial} to TCP/IP mode on port 5555...")
+    await asyncio.to_thread(_adb, "tcpip", "5555", serial=target_serial)
+    await asyncio.sleep(1.0)
+
+    # Connect over Wi-Fi
+    endpoint = f"{phone_ip}:5555"
+    out = await asyncio.to_thread(_adb, "connect", endpoint)
+    
+    # Save PHONE_IP to .env
+    env_path = os.path.join(ROOT_DIR, ".env")
+    try:
+        content = ""
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        if "PHONE_IP=" in content:
+            new_content = re.sub(r'PHONE_IP=.*', f'PHONE_IP={phone_ip}', content)
+        else:
+            new_content = content.rstrip() + f"\nPHONE_IP={phone_ip}\n"
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        os.environ["PHONE_IP"] = phone_ip
+    except Exception as e:
+        log.warning(f"Could not save PHONE_IP to .env: {e}")
+
+    if "connected to" in out.lower() and "cannot connect" not in out.lower():
+        return {
+            "success": True,
+            "ip": phone_ip,
+            "endpoint": endpoint,
+            "message": f"Wireless bridge active! Connected to {endpoint}. You can now unplug the USB cable — Wi-Fi control is fully operational with zero pairing codes required, sir."
+        }
+    return {
+        "success": False,
+        "ip": phone_ip,
+        "endpoint": endpoint,
+        "message": f"Switched to TCP mode on {phone_ip}:5555, but connection returned: {out}. Try running: /wifi auto {phone_ip}, sir."
+    }
+
+
 async def auto_connect_wireless_adb(target_ip: str = "") -> dict:
     """
     Auto-detect and connect to Android Wireless Debugging endpoint over Wi-Fi.
-    Handles Samsung/Android's rotating security port mechanism automatically.
+    Skips manual pairing menus by probing saved phone IP, mDNS, and local ARP table.
     """
-    # 1. Check mDNS discovery (Zero-config Android Wireless Debugging)
+    # 0. Ensure PC Wi-Fi is connected
+    wifi_st = get_wifi_status()
+    if wifi_st.get("state") != "connected":
+        reconnect_wifi()
+        await asyncio.sleep(1.0)
+
+    # 1. Check target IP or .env PHONE_IP on port 5555 first (Zero-code TCP bridge)
+    ip = target_ip or os.getenv("PHONE_IP", "")
+    if not ip:
+        env_path = os.path.join(ROOT_DIR, ".env")
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip().startswith("PHONE_IP="):
+                            ip = line.strip().split("=", 1)[1].strip()
+                            os.environ["PHONE_IP"] = ip
+                            break
+            except Exception:
+                pass
+
+    if ip:
+        endpoint_5555 = f"{ip}:5555"
+        out = await asyncio.to_thread(_adb, "connect", endpoint_5555)
+        if "connected to" in out.lower() and "cannot connect" not in out.lower():
+            return {
+                "success": True,
+                "endpoint": endpoint_5555,
+                "message": f"Instantly connected to {endpoint_5555} over Wi-Fi (Pairing process skipped), sir."
+            }
+
+    # 2. Check mDNS discovery (Android 11+ Wireless Debugging)
     endpoints = await asyncio.to_thread(discover_wireless_adb_endpoints)
     if endpoints:
         for ep in endpoints:
@@ -841,8 +999,7 @@ async def auto_connect_wireless_adb(target_ip: str = "") -> dict:
                     "message": f"Successfully connected to {ep} via mDNS auto-discovery, sir."
                 }
 
-    # 2. Check target IP or .env PHONE_IP
-    ip = target_ip or os.getenv("PHONE_IP", "")
+    # 3. If IP is known, probe dynamic ports
     if ip:
         log.info(f"Probing open Wireless Debugging port on {ip}...")
         port = await asyncio.to_thread(probe_device_wireless_port, ip)
@@ -865,9 +1022,28 @@ async def auto_connect_wireless_adb(target_ip: str = "") -> dict:
             "message": f"No open Wireless Debugging port detected on {ip}. Ensure Wireless Debugging is enabled in Settings > Developer Options, sir."
         }
 
+    # 4. Probe active local ARP nodes on subnet
+    try:
+        arp_res = subprocess.run(["arp", "-a"], capture_output=True, text=True, timeout=3)
+        for line in arp_res.stdout.splitlines():
+            m = re.search(r'^\s*(192\.168\.\d+\.\d+)', line)
+            if m:
+                cand_ip = m.group(1)
+                if cand_ip.endswith(".1") or cand_ip.endswith(".255"):
+                    continue
+                out = await asyncio.to_thread(_adb, "connect", f"{cand_ip}:5555")
+                if "connected to" in out.lower() and "cannot connect" not in out.lower():
+                    return {
+                        "success": True,
+                        "endpoint": f"{cand_ip}:5555",
+                        "message": f"Auto-discovered and connected to phone on {cand_ip}:5555 over Wi-Fi, sir."
+                    }
+    except Exception:
+        pass
+
     return {
         "success": False,
-        "message": "No wireless ADB service found via mDNS. Specify phone IP via: /pair scan <phone_ip> or pair directly with: /pair <ip:port> <code>, sir."
+        "message": "No active wireless phone detected. To connect wirelessly with 0 pairing steps: plug USB cable once and run '/bridge', then unplug cable, sir."
     }
 
 
