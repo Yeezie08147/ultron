@@ -339,30 +339,52 @@ def handle_diag_command():
     """Diagnose USB ADB and Samsung-specific authorization blockers."""
     print(f"\n{Colors.BOLD}{Colors.CYAN}--- SAMSUNG & MOBILE MATRIX HARDWARE DIAGNOSTICS ---{Colors.RESET}")
     
-    # 1. Check PnP USB Hardware
-    ps_pnp = (
-        'Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | '
-        'Where-Object { $_.FriendlyName -match "samsung|android|modem" -or $_.Class -eq "AndroidUsbDeviceClass" } | '
-        'Select-Object FriendlyName, Class, Status | ConvertTo-Json -Compress'
-    )
+    # 1. Check USB Hardware
     pnp_items = []
-    try:
-        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps_pnp], capture_output=True, text=True, timeout=5)
-        raw = r.stdout.strip()
-        if raw:
-            import json
-            pnp_items = json.loads(raw)
-            if isinstance(pnp_items, dict):
-                pnp_items = [pnp_items]
-    except Exception:
-        pass
+    if sys.platform == "darwin":
+        try:
+            r = subprocess.run(["system_profiler", "SPUSBDataType", "-json"], capture_output=True, text=True, timeout=5)
+            if r.stdout:
+                import json
+                data = json.loads(r.stdout)
+                def _scan(node):
+                    if isinstance(node, dict):
+                        name = node.get("_name", "")
+                        if any(k in name.lower() for k in ["samsung", "android", "pixel", "galaxy", "xiaomi", "oneplus"]):
+                            pnp_items.append({"FriendlyName": name, "Class": "USB", "Status": "Connected"})
+                        for v in node.values():
+                            _scan(v)
+                    elif isinstance(node, list):
+                        for elem in node:
+                            _scan(elem)
+                _scan(data)
+        except Exception:
+            pass
+        os_label = "macOS"
+    else:
+        ps_pnp = (
+            'Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | '
+            'Where-Object { $_.FriendlyName -match "samsung|android|modem" -or $_.Class -eq "AndroidUsbDeviceClass" } | '
+            'Select-Object FriendlyName, Class, Status | ConvertTo-Json -Compress'
+        )
+        try:
+            r = subprocess.run(["powershell", "-NoProfile", "-Command", ps_pnp], capture_output=True, text=True, timeout=5)
+            raw = r.stdout.strip()
+            if raw:
+                import json
+                pnp_items = json.loads(raw)
+                if isinstance(pnp_items, dict):
+                    pnp_items = [pnp_items]
+        except Exception:
+            pass
+        os_label = "Windows"
 
     if pnp_items:
-        print(f"  {Colors.GREEN}● USB Hardware Detected by Windows:{Colors.RESET}")
+        print(f"  {Colors.GREEN}● USB Hardware Detected by {os_label}:{Colors.RESET}")
         for item in pnp_items:
             print(f"    • {item.get('FriendlyName')} [{item.get('Class')}] - {item.get('Status')}")
     else:
-        print(f"  {Colors.YELLOW}○ USB Hardware:{Colors.RESET} No USB Android device currently recognized by Windows.")
+        print(f"  {Colors.YELLOW}○ USB Hardware:{Colors.RESET} No USB Android device currently recognized by {os_label}.")
 
     # 2. Check ADB Daemon Status
     adb_out = ""
@@ -553,13 +575,29 @@ async def execute_input(user_input: str):
                 await handle_play_command("/play Back in Black AC/DC")
                 return
 
-    # 3. Autonomous Cognition Engine
+    # 3. Local Neural Engine (LM Studio / Ollama Qwen3.5 Uncensored)
+    try:
+        import ollama_brain
+        brain = ollama_brain.LocalBrain()
+        backend = await brain.detect_active_backend()
+        if backend.get("type") != "none":
+            model_disp = backend.get("model", "Local LLM")
+            backend_disp = "LM Studio" if backend["type"] == "lm_studio" else "Ollama"
+            print(f"\n{Colors.ORANGE}{Colors.BOLD}[ULTRON // {backend_disp} ({model_disp})]{Colors.RESET} ", end="", flush=True)
+            async for chunk in brain.respond_stream(raw):
+                print(chunk + " ", end="", flush=True)
+            print("\n")
+            return
+    except Exception:
+        pass
+
+    # 4. Autonomous Cognition Engine (Zero-Cost Offline Core)
     if server and hasattr(server, "autonomous_ultron_brain"):
         response = await server.autonomous_ultron_brain(raw)
         print_ultron(response)
         return
 
-    # 4. Direct local fallback response
+    # 5. Direct local fallback response
     print_ultron(f"Directive received: '{raw}'. All systems operational, sir.")
 
 

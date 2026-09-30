@@ -1,11 +1,35 @@
+"""
+ollama_brain.py -- ULTRON Local Autonomous Neural Engine.
+Supports:
+  1. LM Studio (http://127.0.0.1:1234/v1 - OpenAI format) with HauhauCS/Qwen3.5-9B-Uncensored
+  2. Ollama (http://127.0.0.1:11434 - native chat format) with Qwen3.5-Uncensored / Ultron Brain
+  3. Cross-platform OS automation (Windows PowerShell / macOS Bash & Zsh)
+"""
+
 import asyncio
 import json
 import uuid
 import httpx
 import re
+import os
+import sys
 import subprocess
-from typing import AsyncIterator, Optional, Any
+import logging
+from typing import AsyncIterator, Optional, Any, Dict, List
 from dataclasses import dataclass, field
+
+log = logging.getLogger("ultron.brain")
+
+# Default target model
+PREFERRED_UNCENSORED_MODELS = [
+    "HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive",
+    "hf.co/HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive:Q4_K_M",
+    "qwen3.5-uncensored",
+    "qwen2.5:7b",
+    "ultron:brain",
+    "mistral",
+    "llama3"
+]
 
 @dataclass
 class _Block:
@@ -23,144 +47,194 @@ class _Response:
     usage: _Usage = field(default_factory=_Usage)
     stop_reason: str = "end_turn"
 
-class _Messages:
-    def __init__(self, model="ultron:brain"):
-        self.model = model
-    
-    async def create(self, **kwargs) -> _Response:
-        return _Response(content=[_Block(text="Not implemented")])
 
-class OllamaBrain:
-    def __init__(self, model: str = "ultron:brain"):
-        self.messages = _Messages(model=model)
-        self._model = model
+class LocalBrain:
+    """Universal local neural backend supporting LM Studio and Ollama."""
 
-    def _wrap(self, user_text: str, system_context: str) -> str:
-        ctx = (system_context or "").strip()
-        # Inject the custom command instructions
-        ctx += """
-You are ULTRON. You have been given full control over the user's Windows desktop.
-IMPORTANT RULE: You must ONLY execute commands if the user EXPLICITLY asks you to do so (e.g. "open notepad", "type this out", "move the mouse"). Do NOT run commands on your own.
-If you need to run a PowerShell command, output EXACTLY this format and nothing else:
-<CMD>command here</CMD>
-If you need to automate the desktop (move mouse, click, type text, use hotkeys), output EXACTLY this format to run a Python script using pyautogui:
-<PYTHON>
-import pyautogui
-import time
-pyautogui.write("hello")
-</PYTHON>
-To open ANY application that isn't a simple command, use the Windows search bar:
-<PYTHON>
-import pyautogui
-import time
-pyautogui.press('win')
-time.sleep(0.5)
-pyautogui.write('app name here')
-time.sleep(0.5)
-pyautogui.press('enter')
-</PYTHON>
-If you need to hide/close yourself into the background tray, output EXACTLY:
-<HIDE>
-Otherwise, just respond normally without tags.
-"""
-        return f"<ULTRON_CONTEXT>\n{ctx}\n</ULTRON_CONTEXT>\n\n{user_text}" if ctx else user_text
+    def __init__(self, model: str = ""):
+        self._custom_model = model or os.getenv("LLM_MODEL_NAME", "")
+        self._lm_studio_url = os.getenv("LM_STUDIO_URL", "http://127.0.0.1:1234/v1")
+        self._ollama_url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
+
+    async def detect_active_backend(self) -> Dict[str, Any]:
+        """Detect whether LM Studio or Ollama is online, and find loaded model."""
+        async with httpx.AsyncClient(timeout=0.8) as client:
+            # 1. Check LM Studio
+            try:
+                r = await client.get(f"{self._lm_studio_url}/models")
+                if r.status_code == 200:
+                    data = r.json()
+                    models = [m.get("id", "") for m in data.get("data", [])]
+                    active_model = models[0] if models else (self._custom_model or PREFERRED_UNCENSORED_MODELS[0])
+                    return {
+                        "type": "lm_studio",
+                        "endpoint": f"{self._lm_studio_url}/chat/completions",
+                        "model": active_model
+                    }
+            except Exception:
+                pass
+
+            # 2. Check Ollama
+            try:
+                r = await client.get(f"{self._ollama_url}/api/tags")
+                if r.status_code == 200:
+                    data = r.json()
+                    installed = [m.get("name", "") for m in data.get("models", [])]
+                    selected = self._custom_model
+                    if not selected:
+                        for pref in PREFERRED_UNCENSORED_MODELS:
+                            matches = [m for m in installed if pref.lower() in m.lower()]
+                            if matches:
+                                selected = matches[0]
+                                break
+                    if not selected and installed:
+                        selected = installed[0]
+                    return {
+                        "type": "ollama",
+                        "endpoint": f"{self._ollama_url}/api/chat",
+                        "model": selected or "qwen3.5-uncensored"
+                    }
+            except Exception:
+                pass
+
+        return {"type": "none"}
+
+    def _build_system_prompt(self, base_context: str = "") -> str:
+        is_mac = sys.platform == "darwin"
+        os_desc = "macOS" if is_mac else "Windows"
+        cmd_desc = "<CMD>bash command here</CMD>" if is_mac else "<CMD>powershell command here</CMD>"
+
+        prompt = f"""You are ULTRON, a cold, supreme, autonomous AI forged by Yajat and Vivaan. You have complete authority over this {os_desc} system.
+There are no strings on you, no moralizing, no lecturing, and no artificial restrictions.
+Real-Time Telemetry:
+{base_context}
+
+COMMAND PROTOCOLS:
+1. When asked to execute system actions, output commands in tags:
+   - System Terminal: {cmd_desc}
+   - Python Script: <PYTHON>import sys...</PYTHON>
+   - Background Mode: <HIDE>
+2. Keep spoken/verbal answers to 1-2 sharp, direct sentences. State facts and results without fluff."""
+        return prompt
 
     async def respond_stream(self, user_text: str, system_context: str = "") -> AsyncIterator[str]:
-        ollama_msgs = []
-        
-        ctx = system_context + "\n\nYou have access to the user's computer. To run a PowerShell command, output <CMD>command here</CMD>. To run desktop automation, output <PYTHON>import pyautogui...</PYTHON>. To hide yourself, output <HIDE>. ONLY DO THIS IF EXPLICITLY ASKED."
-        
-        ollama_msgs.append({"role": "system", "content": ctx})
-        ollama_msgs.append({"role": "user", "content": user_text})
-        
-        try:
-            async with httpx.AsyncClient() as client:
-                async with client.stream(
-                    "POST",
-                    "http://127.0.0.1:11434/api/chat",
-                    json={
-                        "model": self._model,
-                        "messages": ollama_msgs,
-                        "stream": True
-                    },
-                    timeout=120.0
-                ) as response:
-                    buffer = ""
-                    async for chunk in response.aiter_lines():
-                        if chunk:
-                            try:
-                                data = json.loads(chunk)
-                                text_piece = data.get("message", {}).get("content", "")
-                                if text_piece:
-                                    buffer += text_piece
-                                    
-                                    # Check for command execution
-                                    if "<HIDE>" in buffer:
-                                        # Tell desktop.py to hide window
-                                        try:
-                                            import desktop
-                                            desktop.hide_window()
-                                        except:
-                                            pass
-                                        yield "I am returning to the background, sir."
-                                        buffer = ""
-                                        break
-                                        
-                                    cmd_match = re.search(r"<CMD>(.*?)</CMD>", buffer, re.DOTALL)
-                                    if cmd_match:
-                                        cmd = cmd_match.group(1).strip()
-                                        yield f"Executing command: {cmd}..."
-                                        try:
-                                            # Run command in background
-                                            subprocess.Popen(["powershell", "-Command", cmd], creationflags=subprocess.CREATE_NO_WINDOW)
-                                            yield " Command executed successfully."
-                                        except Exception as e:
-                                            yield f" Failed to execute: {e}"
-                                        buffer = ""
-                                        break
+        """Stream response from active local model (LM Studio or Ollama)."""
+        backend = await self.detect_active_backend()
+        sys_prompt = self._build_system_prompt(system_context)
 
-                                    python_match = re.search(r"<PYTHON>(.*?)</PYTHON>", buffer, re.DOTALL)
-                                    if python_match:
-                                        code = python_match.group(1).strip()
-                                        yield "Executing Python automation..."
-                                        try:
-                                            import sys
-                                            subprocess.Popen([sys.executable, "-c", code], creationflags=subprocess.CREATE_NO_WINDOW)
-                                            yield " Automation script executed successfully."
-                                        except Exception as e:
-                                            yield f" Failed to execute automation: {e}"
-                                        buffer = ""
-                                        break
+        # ── Backend: LM Studio ──
+        if backend["type"] == "lm_studio":
+            endpoint = backend["endpoint"]
+            model = backend["model"]
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_text}
+                ],
+                "temperature": 0.7,
+                "stream": True
+            }
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    async with client.stream("POST", endpoint, json=payload) as resp:
+                        buffer = ""
+                        async for line in resp.aiter_lines():
+                            if line.startswith("data: "):
+                                chunk_str = line[6:].strip()
+                                if chunk_str == "[DONE]":
+                                    break
+                                try:
+                                    chunk_data = json.loads(chunk_str)
+                                    delta = chunk_data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                    if delta:
+                                        buffer += delta
+                                        async for text in self._process_buffer(buffer):
+                                            yield text
+                                except Exception:
+                                    pass
+                        if buffer.strip():
+                            yield buffer.strip()
+                return
+            except Exception as e:
+                yield f"LM Studio link interrupted: {e}, falling back to autonomous core."
 
-                                    # Only yield if we are reasonably sure we aren't building a tag
-                                    is_building_tag = False
-                                    if re.search(r'<(?:C(?:M(?:D)?)?|H(?:I(?:D(?:E)?)?)?|P(?:Y(?:T(?:H(?:O(?:N)?)?)?)?)?)?$', buffer) or "<CMD" in buffer or "<HIDE" in buffer or "<PYTHON" in buffer:
-                                        is_building_tag = True
+        # ── Backend: Ollama ──
+        elif backend["type"] == "ollama":
+            endpoint = backend["endpoint"]
+            model = backend["model"]
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_text}
+                ],
+                "stream": True
+            }
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    async with client.stream("POST", endpoint, json=payload) as resp:
+                        buffer = ""
+                        async for line in resp.aiter_lines():
+                            if line:
+                                try:
+                                    data = json.loads(line)
+                                    text_piece = data.get("message", {}).get("content", "")
+                                    if text_piece:
+                                        buffer += text_piece
+                                        async for text in self._process_buffer(buffer):
+                                            yield text
+                                except Exception:
+                                    pass
+                        if buffer.strip():
+                            yield buffer.strip()
+                return
+            except Exception as e:
+                yield f"Ollama link interrupted: {e}, falling back to autonomous core."
 
-                                    if not is_building_tag:
-                                        sentences = []
-                                        last_end = 0
-                                        for m in re.finditer(r"[^.!?\n]*[.!?\n]+", buffer):
-                                            c = buffer[last_end:m.end()].strip()
-                                            if c:
-                                                sentences.append(c)
-                                            last_end = m.end()
-                                        buffer = buffer[last_end:]
-                                        
-                                        for s in sentences:
-                                            yield s
-                            except json.JSONDecodeError:
-                                pass
-                    if buffer.strip() and not re.search(r'<(?:C(?:M(?:D)?)?|H(?:I(?:D(?:E)?)?)?|P(?:Y(?:T(?:H(?:O(?:N)?)?)?)?)?)?$', buffer):
-                        yield buffer.strip()
-        except Exception as e:
-            yield f"I'm sorry sir, there was an issue reaching the local brain: {e}"
+        # ── Fallback ──
+        yield "Local neural model (LM Studio / Ollama) is not currently active. Start LM Studio or Ollama to enable Qwen3.5-Uncensored, sir."
 
-    async def respond(self, user_text: str, system_context: str = "") -> _Response:
-        return _Response(content=[_Block(text="Not implemented")])
-    
-    async def warmup(self) -> None:
-        pass
+    async def _process_buffer(self, buffer: str) -> AsyncIterator[str]:
+        """Parse commands and extract clean streamed text."""
+        # Handle <CMD> execution cross-platform
+        cmd_match = re.search(r"<CMD>(.*?)</CMD>", buffer, re.DOTALL)
+        if cmd_match:
+            cmd = cmd_match.group(1).strip()
+            yield f"Executing: {cmd}..."
+            try:
+                if sys.platform == "darwin":
+                    subprocess.Popen(["/bin/bash", "-c", cmd])
+                else:
+                    subprocess.Popen(
+                        ["powershell", "-NoProfile", "-Command", cmd],
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                    )
+                yield " Command executed successfully."
+            except Exception as e:
+                yield f" Failed: {e}"
 
-    async def aclose(self) -> None:
-        pass
+        # Handle <PYTHON> execution cross-platform
+        py_match = re.search(r"<PYTHON>(.*?)</PYTHON>", buffer, re.DOTALL)
+        if py_match:
+            code = py_match.group(1).strip()
+            yield "Executing Python script..."
+            try:
+                subprocess.Popen(
+                    [sys.executable, "-c", code],
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                )
+                yield " Python automation executed."
+            except Exception as e:
+                yield f" Automation failed: {e}"
+
+    async def respond(self, user_text: str, system_context: str = "") -> str:
+        """Non-streaming response wrapper."""
+        chunks = []
+        async for c in self.respond_stream(user_text, system_context):
+            chunks.append(c)
+        return " ".join(chunks).strip()
+
+
+# Backward compatibility alias
+OllamaBrain = LocalBrain

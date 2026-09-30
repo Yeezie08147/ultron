@@ -187,14 +187,49 @@ _PNP_LOCK = threading.Lock()
 
 
 def _fetch_pnp_mobile_devices() -> List[Dict[str, Any]]:
-    """Query Windows PnP strictly for physically connected smartphones via USB (MTP or Android USB)."""
+    """Query USB bus strictly for physically connected smartphones (Windows PnP / macOS SPUSBDataType)."""
+    devices = []
+    if sys.platform == "darwin":
+        try:
+            res = subprocess.run(
+                ["system_profiler", "SPUSBDataType", "-json"],
+                capture_output=True, text=True, timeout=4
+            )
+            raw = res.stdout.strip()
+            if raw:
+                import json
+                data = json.loads(raw)
+                seen_names = set()
+                def _scan(node):
+                    if isinstance(node, dict):
+                        name = node.get("_name", "")
+                        vendor = node.get("vendor_id", "")
+                        if any(k in name.lower() for k in ["samsung", "android", "pixel", "galaxy", "xiaomi", "oneplus", "huawei"]):
+                            if name not in seen_names:
+                                seen_names.add(name)
+                                devices.append({
+                                    "name": name,
+                                    "class": "USB",
+                                    "instance_id": str(vendor),
+                                    "serial": "USB:MTP",
+                                    "is_bluetooth": False
+                                })
+                        for v in node.values():
+                            _scan(v)
+                    elif isinstance(node, list):
+                        for elem in node:
+                            _scan(elem)
+                _scan(data)
+        except Exception as e:
+            log.debug(f"macOS USB query error: {e}")
+        return devices
+
     ps_cmd = (
         'Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | Where-Object { '
         '($_.Class -eq "WPD") -or '
         '($_.Class -eq "AndroidUsbDeviceClass") '
         '} | Select-Object FriendlyName, Class, InstanceId | ConvertTo-Json -Compress'
     )
-    devices = []
     try:
         res = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
@@ -1050,7 +1085,32 @@ async def auto_connect_wireless_adb(target_ip: str = "") -> dict:
 # ── Wi-Fi Adapter & Network Watchdog ──
 
 def get_wifi_status() -> dict:
-    """Retrieve host Wi-Fi interface state and available profiles via netsh."""
+    """Retrieve host Wi-Fi interface state and available profiles via netsh (Windows) or networksetup (macOS)."""
+    if sys.platform == "darwin":
+        try:
+            r = subprocess.run(["networksetup", "-getairportnetwork", "en0"], capture_output=True, text=True, timeout=5)
+            ssid = ""
+            state = "disconnected"
+            if "Current Wi-Fi Network:" in r.stdout:
+                ssid = r.stdout.split(":")[-1].strip()
+                state = "connected" if ssid else "disconnected"
+
+            r_pref = subprocess.run(["networksetup", "-listpreferredwirelessnetworks", "en0"], capture_output=True, text=True, timeout=5)
+            profiles = []
+            for line in r_pref.stdout.splitlines()[1:]:
+                p = line.strip()
+                if p:
+                    profiles.append(p)
+            return {
+                "state": state,
+                "ssid": ssid,
+                "signal": "Connected" if state == "connected" else "None",
+                "profiles": profiles
+            }
+        except Exception as e:
+            log.warning(f"macOS Wi-Fi query error: {e}")
+            return {"state": "error", "error": str(e), "profiles": []}
+
     try:
         if_res = subprocess.run(
             ["netsh", "wlan", "show", "interfaces"],
@@ -1095,7 +1155,7 @@ def get_wifi_status() -> dict:
 
 def reconnect_wifi(profile_name: str = "") -> dict:
     """
-    Attempt to connect / reconnect to a known saved Wi-Fi profile via netsh.
+    Attempt to connect / reconnect to a known saved Wi-Fi profile via netsh (Windows) or networksetup (macOS).
     """
     status = get_wifi_status()
     target_profile = profile_name
@@ -1107,6 +1167,27 @@ def reconnect_wifi(profile_name: str = "") -> dict:
             "success": False,
             "message": "No saved Wi-Fi profiles found to connect to, sir."
         }
+
+    if sys.platform == "darwin":
+        try:
+            cmd = ["networksetup", "-setairportnetwork", "en0", target_profile]
+            subprocess.run(cmd, capture_output=True, text=True, timeout=8)
+            time.sleep(1.5)
+            new_status = get_wifi_status()
+            if new_status.get("state") == "connected":
+                return {
+                    "success": True,
+                    "profile": target_profile,
+                    "ssid": new_status.get("ssid", target_profile),
+                    "message": f"Successfully reconnected to Wi-Fi network '{new_status.get('ssid', target_profile)}', sir."
+                }
+            return {
+                "success": False,
+                "profile": target_profile,
+                "message": f"Connection request issued for '{target_profile}'. State: {new_status.get('state')}, sir."
+            }
+        except Exception as e:
+            return {"success": False, "message": f"macOS Wi-Fi reconnect error: {e}"}
 
     try:
         cmd = ["netsh", "wlan", "connect", f"name={target_profile}"]

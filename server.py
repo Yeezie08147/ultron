@@ -1501,23 +1501,62 @@ async def autonomous_ultron_brain(text: str) -> str:
     return "Directive analyzed, sir. Neural matrix and desktop telemetry fully operational. Standing by for execution."
 
 
-_ollama_checked_time: float = 0.0
+_llm_checked_time: float = 0.0
+_lm_studio_available: bool = False
+_lm_studio_model: str = ""
 _ollama_available: bool = False
+_ollama_model: str = "ultron:brain"
 
-async def _is_ollama_online() -> bool:
-    global _ollama_checked_time, _ollama_available
+async def _check_local_llms() -> dict:
+    """Probe for active LM Studio or Ollama instances running locally."""
+    global _llm_checked_time, _lm_studio_available, _lm_studio_model, _ollama_available, _ollama_model
     now = time.time()
-    if now - _ollama_checked_time < 30.0:
-        return _ollama_available
-    _ollama_checked_time = now
+    if now - _llm_checked_time < 20.0:
+        return {
+            "lm_studio": _lm_studio_available,
+            "lm_studio_model": _lm_studio_model,
+            "ollama": _ollama_available,
+            "ollama_model": _ollama_model
+        }
+    _llm_checked_time = now
+    
+    import httpx
+    # 1. Check LM Studio
     try:
-        import httpx
+        async with httpx.AsyncClient(timeout=0.3) as c:
+            r = await c.get("http://127.0.0.1:1234/v1/models")
+            if r.status_code == 200:
+                models = [m.get("id", "") for m in r.json().get("data", [])]
+                _lm_studio_model = models[0] if models else "HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive"
+                _lm_studio_available = True
+            else:
+                _lm_studio_available = False
+    except Exception:
+        _lm_studio_available = False
+
+    # 2. Check Ollama
+    try:
         async with httpx.AsyncClient(timeout=0.3) as c:
             r = await c.get("http://127.0.0.1:11434/api/tags")
-            _ollama_available = (r.status_code == 200)
+            if r.status_code == 200:
+                tags = [m.get("name", "") for m in r.json().get("models", [])]
+                _ollama_available = True
+                for pref in ["qwen3.5", "qwen", "ultron", "mistral"]:
+                    matches = [t for t in tags if pref in t.lower()]
+                    if matches:
+                        _ollama_model = matches[0]
+                        break
+            else:
+                _ollama_available = False
     except Exception:
         _ollama_available = False
-    return _ollama_available
+
+    return {
+        "lm_studio": _lm_studio_available,
+        "lm_studio_model": _lm_studio_model,
+        "ollama": _ollama_available,
+        "ollama_model": _ollama_model
+    }
 
 
 async def generate_response(
@@ -1529,12 +1568,12 @@ async def generate_response(
     last_response: str = "",
     session_summary: str = "",
 ) -> str:
-    """Generate an ULTRON response with multi-tier fallback (Anthropic -> Kie.ai -> Local Ollama -> Autonomous Offline Brain)."""
+    """Generate an ULTRON response with multi-tier fallback (Anthropic -> Kie.ai -> LM Studio / Ollama -> Autonomous Offline Brain)."""
     import httpx
 
     sys_ctx = system_monitor.get_context_for_prompt()
     system_prompt = (
-        "You are ULTRON, a superior, efficient, cold AI assistant with full control of the user's Windows desktop.\n"
+        "You are ULTRON, a superior, efficient, cold AI assistant with full control of the user's desktop.\n"
         f"Real-time System Status: {sys_ctx}\n\n"
         "Guidelines:\n"
         "1. Keep verbal responses to 1-2 direct, efficient sentences. No pleasantries or fluff.\n"
@@ -1583,8 +1622,37 @@ async def generate_response(
     except Exception:
         pass
 
-    # Tier 3: Local Ollama (if running on 127.0.0.1:11434)
-    if await _is_ollama_online():
+    # Tier 3: Local Neural Engine (LM Studio [Qwen3.5 Uncensored] or Ollama)
+    llms = await _check_local_llms()
+
+    # 3a. LM Studio (http://127.0.0.1:1234/v1)
+    if llms["lm_studio"]:
+        try:
+            msgs = [{"role": "system", "content": system_prompt}]
+            for msg in conversation_history[-8:]:
+                msgs.append({"role": msg["role"], "content": msg["content"]})
+            msgs.append({"role": "user", "content": text})
+
+            async with httpx.AsyncClient(timeout=15.0) as c:
+                resp = await c.post(
+                    "http://127.0.0.1:1234/v1/chat/completions",
+                    json={
+                        "model": llms["lm_studio_model"],
+                        "messages": msgs,
+                        "temperature": 0.7,
+                        "stream": False
+                    }
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    if content:
+                        return content.strip()
+        except Exception as e:
+            log.debug(f"LM Studio query failed: {e}")
+
+    # 3b. Ollama (http://127.0.0.1:11434)
+    if llms["ollama"]:
         try:
             ollama_msgs = [{"role": "system", "content": system_prompt}]
             for msg in conversation_history[-8:]:
@@ -1595,7 +1663,7 @@ async def generate_response(
                 resp = await c.post(
                     "http://127.0.0.1:11434/api/chat",
                     json={
-                        "model": "ultron:brain",
+                        "model": llms["ollama_model"],
                         "messages": ollama_msgs,
                         "stream": False
                     }
@@ -1604,9 +1672,9 @@ async def generate_response(
                     data = resp.json()
                     content = data.get("message", {}).get("content", "")
                     if content:
-                        return content
-        except Exception:
-            pass
+                        return content.strip()
+        except Exception as e:
+            log.debug(f"Ollama query failed: {e}")
 
     # Tier 4: Autonomous ULTRON Offline Engine (Guaranteed 100% Free & Zero-Failure)
     return await autonomous_ultron_brain(text)

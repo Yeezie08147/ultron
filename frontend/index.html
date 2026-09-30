@@ -80,19 +80,26 @@
           </svg>
         </div>
         <div class="auth-title">INSTALL ON ANY COMPUTER</div>
-        <div class="auth-subtitle">OFFICIAL 1-LINE POWERSHELL COMMAND // GLOBAL ACCESS</div>
+        <div class="auth-subtitle">WINDOWS &amp; macOS // OFFICIAL 1-LINE GLOBAL INSTALLERS</div>
 
-        <div id="install-cmd-box" style="margin: 20px 0; background: rgba(0,0,0,0.6); padding: 14px; border-radius: 8px; border: 1px solid rgba(var(--accent-rgb), 0.4); text-align: left; font-family: monospace; font-size: 13px; color: #00F0FF; word-break: break-all;">
+        <div style="font-size: 11px; font-weight: bold; color: rgba(var(--accent-rgb), 0.9); margin-top: 14px; text-align: left;">WINDOWS POWERSHELL:</div>
+        <div id="install-cmd-box" style="margin: 6px 0 12px 0; background: rgba(0,0,0,0.6); padding: 12px; border-radius: 8px; border: 1px solid rgba(var(--accent-rgb), 0.4); text-align: left; font-family: monospace; font-size: 12px; color: #00F0FF; word-break: break-all;">
           irm https://raw.githubusercontent.com/Yeezie08147/ultron/main/install.ps1 | iex
         </div>
 
+        <div style="font-size: 11px; font-weight: bold; color: rgba(var(--accent-rgb), 0.9); text-align: left;">macOS &amp; LINUX (TERMINAL / iTERM):</div>
+        <div id="install-cmd-box-mac" style="margin: 6px 0 14px 0; background: rgba(0,0,0,0.6); padding: 12px; border-radius: 8px; border: 1px solid rgba(var(--accent-rgb), 0.4); text-align: left; font-family: monospace; font-size: 12px; color: #00F0FF; word-break: break-all;">
+          curl -fsSL https://raw.githubusercontent.com/Yeezie08147/ultron/main/install.sh | bash
+        </div>
+
         <div style="display: flex; gap: 10px; margin-bottom: 14px;">
-          <button id="btn-copy-install" class="auth-submit-btn" style="flex: 1; margin: 0; background: rgba(var(--accent-rgb), 0.9);">COPY COMMAND</button>
-          <button id="btn-close-install" class="auth-submit-btn" style="flex: 1; margin: 0; background: rgba(255,255,255,0.15);">CLOSE</button>
+          <button id="btn-copy-install" class="auth-submit-btn" style="flex: 1; margin: 0; background: rgba(var(--accent-rgb), 0.9);">COPY WINDOWS</button>
+          <button id="btn-copy-install-mac" class="auth-submit-btn" style="flex: 1; margin: 0; background: rgba(var(--accent-rgb), 0.9);">COPY macOS</button>
+          <button id="btn-close-install" class="auth-submit-btn" style="flex: 0.8; margin: 0; background: rgba(255,255,255,0.15);">CLOSE</button>
         </div>
 
         <div style="font-size: 11px; color: rgba(255,255,255,0.6); line-height: 1.5; text-align: left;">
-          Paste in Windows PowerShell on any PC. Automatically configures Python, virtual environment, and adds <b>ultron</b> (CLI) &amp; <b>ultron-gui</b> globally to your system PATH.
+          Paste in PowerShell (Windows) or Terminal (macOS). Automatically configures Python, virtual environment, and registers <b>ultron</b> (CLI) &amp; <b>ultron-gui</b> globally in system PATH.
         </div>
       </div>
     </div>

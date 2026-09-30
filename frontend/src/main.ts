@@ -336,9 +336,11 @@ const btnInstall = document.getElementById("btn-install");
 const btnInstallPc = document.getElementById("btn-install-pc");
 const installModal = document.getElementById("install-modal");
 const btnCopyInstall = document.getElementById("btn-copy-install");
+const btnCopyInstallMac = document.getElementById("btn-copy-install-mac");
 const btnCloseInstall = document.getElementById("btn-close-install");
 
 const INSTALL_CMD = "irm https://raw.githubusercontent.com/Yeezie08147/ultron/main/install.ps1 | iex";
+const INSTALL_CMD_MAC = "curl -fsSL https://raw.githubusercontent.com/Yeezie08147/ultron/main/install.sh | bash";
 
 function openInstallModal() {
   if (installModal) installModal.style.display = "flex";
@@ -372,6 +374,19 @@ btnCopyInstall?.addEventListener("click", (e) => {
       btnCopyInstall.textContent = "COPIED TO CLIPBOARD!";
       setTimeout(() => {
         if (btnCopyInstall) btnCopyInstall.textContent = orig;
+      }, 2500);
+    }
+  });
+});
+
+btnCopyInstallMac?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  navigator.clipboard.writeText(INSTALL_CMD_MAC).then(() => {
+    if (btnCopyInstallMac) {
+      const orig = btnCopyInstallMac.textContent;
+      btnCopyInstallMac.textContent = "COPIED TO CLIPBOARD!";
+      setTimeout(() => {
+        if (btnCopyInstallMac) btnCopyInstallMac.textContent = orig;
       }, 2500);
     }
   });
