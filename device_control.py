@@ -10,6 +10,7 @@ Controls Android and mobile devices connected via USB / Wi-Fi / Bluetooth:
   - App launcher (YouTube, Camera, Settings, Spotify, etc.)
 """
 
+import sys
 import asyncio
 import subprocess
 import logging
