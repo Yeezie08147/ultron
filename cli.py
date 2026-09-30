@@ -258,7 +258,7 @@ async def handle_bridge_command():
 
 
 async def handle_wifi_command(arg: str = ""):
-    """Manage Wi-Fi network interface & auto-reconnect."""
+    """Manage Wi-Fi network interface, password vault, scan radar & auto-unlock."""
     if not device_control:
         print_err("Device control module not available.")
         return
@@ -268,14 +268,122 @@ async def handle_wifi_command(arg: str = ""):
     if subcmd in ("bridge", "auto", "skip"):
         res = await device_control.enable_wireless_bridge()
         print_ultron(res.get("message", "Bridge sequence executed."))
-    elif subcmd in ("reconnect", "connect"):
+
+    elif subcmd in ("keys", "vault", "passwords", "saved"):
+        keys = device_control.get_stored_wifi_passwords()
+        print(f"\n{Colors.BOLD}{Colors.CYAN}========================================================================{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.CYAN}                   STORED WI-FI PASSWORD VAULT{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.CYAN}========================================================================{Colors.RESET}")
+        print(f"  {Colors.BOLD}{'ORIGIN':<15} {'SSID':<25} {'PASSWORD':<20} {'SECURITY':<10}{Colors.RESET}")
+        print(f"  {Colors.GREY}{'-'*70}{Colors.RESET}")
+        if not keys:
+            print(f"  {Colors.YELLOW}No saved Wi-Fi passwords detected on host.{Colors.RESET}")
+        else:
+            for k in keys:
+                pass_str = k.get('password', '')
+                pass_color = Colors.GREEN if pass_str and not pass_str.startswith('[') else Colors.YELLOW
+                print(f"  {Colors.WHITE}{k.get('device', 'PC'):<15}{Colors.RESET} {Colors.BOLD}{k.get('ssid', 'N/A'):<25}{Colors.RESET} {pass_color}{pass_str:<20}{Colors.RESET} {Colors.GREY}{k.get('auth', 'WPA2'):<10}{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.CYAN}========================================================================{Colors.RESET}")
+        print(f"  {Colors.GREY}Connect: {Colors.ORANGE}/wifi connect <ssid>{Colors.GREY} | Push to phone: {Colors.ORANGE}/wifi push <ssid>{Colors.RESET}\n")
+
+    elif subcmd in ("scan", "radar", "audit"):
+        print(f"\n{Colors.CYAN}Scanning surrounding Wi-Fi frequencies & signal radar...{Colors.RESET}")
+        radar = device_control.scan_nearby_wifi()
+        print(f"\n{Colors.BOLD}{Colors.CYAN}========================================================================{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.CYAN}                   SURROUNDING WI-FI RADAR & AUDIT{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.CYAN}========================================================================{Colors.RESET}")
+        print(f"  {Colors.BOLD}{'SSID':<24} {'SIGNAL':<12} {'BAND':<9} {'CH':<4} {'AUTH':<15} {'STATUS'}{Colors.RESET}")
+        print(f"  {Colors.GREY}{'-'*72}{Colors.RESET}")
+        if not radar:
+            print(f"  {Colors.YELLOW}No Wi-Fi networks in range.{Colors.RESET}")
+        else:
+            for net in radar:
+                sig = net.get('signal', 0)
+                bars = "████" if sig >= 75 else ("███░" if sig >= 50 else ("██░░" if sig >= 25 else "█░░░"))
+                sig_color = Colors.GREEN if sig >= 60 else (Colors.YELLOW if sig >= 35 else Colors.RED)
+                status = net.get('status', 'SECURED')
+                status_color = Colors.GREEN if status in ('CONNECTED', 'OPEN', 'SAVED / VAULT') else Colors.YELLOW
+                print(f"  {Colors.WHITE}{Colors.BOLD}{net.get('ssid', 'Hidden'):<24}{Colors.RESET} "
+                      f"{sig_color}{bars} {sig:>2}%{Colors.RESET}  "
+                      f"{Colors.GREY}{net.get('band', '2.4GHz'):<9}{Colors.RESET} "
+                      f"{Colors.WHITE}{net.get('channel', '1'):<4}{Colors.RESET} "
+                      f"{Colors.GREY}{net.get('auth', 'WPA2'):<15}{Colors.RESET} "
+                      f"{status_color}{status}{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.CYAN}========================================================================{Colors.RESET}")
+        print(f"  {Colors.GREY}Actions: {Colors.ORANGE}/wifi connect <ssid>{Colors.GREY} | {Colors.ORANGE}/wifi unlock <ssid>{Colors.GREY} (Auto-Trial) | {Colors.ORANGE}/wifi keys{Colors.RESET}\n")
+
+    elif subcmd in ("connect", "join"):
+        target_ssid = parts[2] if len(parts) > 2 else ""
+        target_pass = parts[3] if len(parts) > 3 else ""
+        if not target_ssid:
+            print_err("Usage: /wifi connect <ssid> [password]")
+            return
+        print(f"{Colors.CYAN}Connecting to '{target_ssid}' (Bypassing manual UI password typing)...{Colors.RESET}")
+        res = device_control.connect_wifi_network(target_ssid, target_pass)
+        if res.get("success"):
+            print_ultron(res.get("message", f"Connected to {target_ssid}."))
+        else:
+            print_err(res.get("message", f"Failed to connect to {target_ssid}."))
+
+    elif subcmd in ("unlock", "crack", "bruteforce", "trial"):
+        target_ssid = parts[2] if len(parts) > 2 else ""
+        if not target_ssid:
+            print_err("Usage: /wifi unlock <ssid> [candidate_passwords...]")
+            return
+        wordlist = parts[3:] if len(parts) > 3 else None
+        print(f"\n{Colors.BOLD}{Colors.ORANGE}[ULTRON] Starting autonomous Wi-Fi unlock for '{target_ssid}'...{Colors.RESET}")
+        print(f"{Colors.GREY}Testing candidate router keys, heuristic patterns & vault keys in background...{Colors.RESET}")
+        
+        def _prog(cur, tot, cand):
+            print(f"  {Colors.GREY}[Trial {cur}/{tot}]{Colors.RESET} Testing candidate key: {Colors.CYAN}'{cand}'{Colors.RESET} (Handshake probe...)")
+
+        res = await asyncio.to_thread(device_control.smart_unlock_wifi, target_ssid, wordlist, 20, _prog)
+        if res.get("success"):
+            print(f"\n{Colors.BOLD}{Colors.GREEN}[ULTRON] SUCCESS! Wi-Fi network '{target_ssid}' UNLOCKED!{Colors.RESET}")
+            print(f"  {Colors.BOLD}• Unlocked Password:{Colors.RESET} {Colors.GREEN}{res.get('password')}{Colors.RESET}")
+            print(f"  {Colors.BOLD}• Trial Key Index:{Colors.RESET}   {res.get('attempts')}/{res.get('total')}")
+            print(f"  {Colors.GREY}Credential persisted to ~/.ultron/wifi_vault.json and .env{Colors.RESET}\n")
+        else:
+            print_err(res.get("message", f"Could not unlock {target_ssid}."))
+
+    elif subcmd in ("push", "phone"):
+        target_ssid = parts[2] if len(parts) > 2 else ""
+        target_pass = parts[3] if len(parts) > 3 else ""
+        res = device_control.push_wifi_to_android("", target_ssid, target_pass)
+        if res.get("success"):
+            print_ultron(res.get("message", "Pushed Wi-Fi to phone."))
+        else:
+            print_err(res.get("message", "Failed to push Wi-Fi to phone."))
+
+    elif subcmd in ("qr", "qrcode", "share"):
+        target_ssid = parts[2] if len(parts) > 2 else ""
+        if not target_ssid:
+            st = device_control.get_wifi_status()
+            target_ssid = st.get("ssid", "")
+        if not target_ssid:
+            print_err("Specify an SSID: /wifi qr <ssid>")
+            return
+        vault = device_control._load_wifi_vault()
+        pwd = vault.get(target_ssid, {}).get("password", "")
+        qr_info = device_control.generate_wifi_qr_text(target_ssid, pwd)
+        print(f"\n{Colors.BOLD}{Colors.CYAN}--- WI-FI INSTANT JOIN QR LINK ---{Colors.RESET}")
+        print(f"  {Colors.BOLD}• SSID:{Colors.RESET}        {qr_info['ssid']}")
+        print(f"  {Colors.BOLD}• Security:{Colors.RESET}    {qr_info['auth']}")
+        if pwd:
+            print(f"  {Colors.BOLD}• Password:{Colors.RESET}    {Colors.GREEN}{pwd}{Colors.RESET}")
+        print(f"  {Colors.BOLD}• QR Payload:{Colors.RESET}  {Colors.WHITE}{qr_info['qr_payload']}{Colors.RESET}")
+        print(f"  {Colors.BOLD}• QR Image Link:{Colors.RESET} {Colors.CYAN}{qr_info['direct_link']}{Colors.RESET}\n")
+
+    elif subcmd in ("portal", "captive", "bypass"):
+        print(f"{Colors.CYAN}Checking for Captive Portal / Hotel / Cafe splash screens...{Colors.RESET}")
+        res = device_control.auto_unlock_captive_portal()
+        print_ultron(res.get("message", "Portal check complete."))
+
+    elif subcmd in ("reconnect",):
         target_profile = parts[2] if len(parts) > 2 else ""
         res = device_control.reconnect_wifi(target_profile)
         print_ultron(res.get("message", "Wi-Fi command executed."))
-    elif subcmd in ("scan", "adb", "phone"):
-        target_ip = parts[2] if len(parts) > 2 else ""
-        res = await device_control.auto_connect_wireless_adb(target_ip)
-        print_ultron(res.get("message", "Wireless ADB scan complete."))
+
     else:
         st = device_control.get_wifi_status()
         state_color = Colors.GREEN if st.get("state") == "connected" else Colors.YELLOW
@@ -286,7 +394,15 @@ async def handle_wifi_command(arg: str = ""):
         profs = st.get("profiles", [])
         if profs:
             print(f"  {Colors.BOLD}• Saved Profiles:{Colors.RESET}  {', '.join(profs)}")
-        print(f"\n{Colors.GREY}  Commands: {Colors.ORANGE}/bridge{Colors.GREY} (skip pairing) | {Colors.ORANGE}/wifi reconnect [profile]{Colors.GREY} | {Colors.ORANGE}/wifi scan [phone_ip]{Colors.RESET}\n")
+        print(f"\n{Colors.BOLD}{Colors.CYAN}Wi-Fi Automation & Unlock Commands:{Colors.RESET}")
+        print(f"  {Colors.ORANGE}/wifi scan{Colors.RESET}              Nearby Wi-Fi radar with security & unlock classification")
+        print(f"  {Colors.ORANGE}/wifi keys{Colors.RESET}              Show all recovered plain-text passwords from PC & phones")
+        print(f"  {Colors.ORANGE}/wifi connect <ssid>{Colors.RESET}    Silently connect (skips typing password, auto-pulls key)")
+        print(f"  {Colors.ORANGE}/wifi unlock <ssid>{Colors.RESET}     Autonomous brute-force & key trial tester")
+        print(f"  {Colors.ORANGE}/wifi push [ssid]{Colors.RESET}       Push Wi-Fi credentials to Android phone over ADB")
+        print(f"  {Colors.ORANGE}/wifi qr [ssid]{Colors.RESET}         Generate instant phone camera scan QR link")
+        print(f"  {Colors.ORANGE}/wifi portal{Colors.RESET}            Auto-detect & unlock captive portal splash pages")
+        print(f"  {Colors.ORANGE}/bridge{Colors.RESET}                 Auto-switch phone from USB to persistent Wi-Fi\n")
 
 
 def handle_facetrack_command(arg: str):
@@ -469,9 +585,13 @@ def print_help():
 
   {Colors.BOLD}{Colors.CYAN}📱 MOBILE DEVICE MATRIX COMMANDS:{Colors.RESET}
     {Colors.ORANGE}/devices{Colors.RESET}           Scan & display connected phones (Status, Battery, ID)
-    {Colors.ORANGE}/bridge{Colors.RESET}            Auto-switch USB phone to persistent Wi-Fi (Skips pairing process)
-    {Colors.ORANGE}/pair [scan|ip:port]{Colors.RESET} Force pair USB, auto-scan rotating Wi-Fi ports, or pair
-    {Colors.ORANGE}/wifi [status|reconnect]{Colors.RESET} Reconnect host Wi-Fi or auto-scan wireless phone
+    {Colors.ORANGE}/wifi [scan|radar]{Colors.RESET}     Surrounding Wi-Fi radar with signal %, channels & security
+    {Colors.ORANGE}/wifi keys{Colors.RESET}             Display recovered plain-text Wi-Fi passwords from PC & phone
+    {Colors.ORANGE}/wifi connect <ssid>{Colors.RESET}  Connect silently (skips typing password, auto-pulls key)
+    {Colors.ORANGE}/wifi unlock <ssid>{Colors.RESET}   Autonomous brute-force & key trial tester
+    {Colors.ORANGE}/wifi push [ssid]{Colors.RESET}      Push Wi-Fi connection directly to Android phone via ADB
+    {Colors.ORANGE}/wifi qr [ssid]{Colors.RESET}        Generate instant camera scan Wi-Fi join QR link
+    {Colors.ORANGE}/wifi portal{Colors.RESET}           Auto-detect & unlock captive portal splash pages
     {Colors.ORANGE}/diag{Colors.RESET}              Diagnose Samsung USB authorization & Auto Blocker
     {Colors.ORANGE}/unlock [pin]{Colors.RESET}      Unlock screen (Auto-types saved PIN or saves new working PIN)
     {Colors.ORANGE}/lock{Colors.RESET}              Put connected phone screen to sleep / lock

