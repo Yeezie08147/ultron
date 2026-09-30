@@ -28,17 +28,23 @@ def _get_pins() -> List[str]:
     pins = []
     default = os.getenv("DEVICE_PIN", "")
     if not default:
-        env_path = os.path.join(ROOT_DIR, ".env")
-        if os.path.exists(env_path):
-            try:
-                with open(env_path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        if line.strip().startswith("DEVICE_PIN="):
-                            default = line.strip().split("=", 1)[1].strip()
-                            os.environ["DEVICE_PIN"] = default
-                            break
-            except Exception:
-                pass
+        env_paths = [
+            os.path.join(ROOT_DIR, ".env"),
+            os.path.expanduser("~/.ultron/.env")
+        ]
+        for env_path in env_paths:
+            if os.path.exists(env_path):
+                try:
+                    with open(env_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if line.strip().startswith("DEVICE_PIN="):
+                                default = line.strip().split("=", 1)[1].strip().strip('"').strip("'")
+                                os.environ["DEVICE_PIN"] = default
+                                break
+                    if default:
+                        break
+                except Exception:
+                    pass
     for i in range(1, 6):
         pin = os.getenv(f"DEVICE_PIN_{i}", default)
         pins.append(pin)
@@ -52,25 +58,34 @@ def save_verified_device_pin(pin: str) -> bool:
         return False
     os.environ["DEVICE_PIN"] = clean_pin
     
-    env_path = os.path.join(ROOT_DIR, ".env")
-    try:
-        content = ""
-        if os.path.exists(env_path):
-            with open(env_path, "r", encoding="utf-8") as f:
-                content = f.read()
-        
-        if "DEVICE_PIN=" in content:
-            new_content = re.sub(r'DEVICE_PIN=.*', f'DEVICE_PIN={clean_pin}', content)
-        else:
-            new_content = content.rstrip() + f"\nDEVICE_PIN={clean_pin}\n"
+    env_paths = [
+        os.path.join(ROOT_DIR, ".env"),
+        os.path.expanduser("~/.ultron/.env")
+    ]
+    saved_any = False
+    for env_path in env_paths:
+        try:
+            os.makedirs(os.path.dirname(env_path), exist_ok=True)
+            content = ""
+            if os.path.exists(env_path):
+                with open(env_path, "r", encoding="utf-8") as f:
+                    content = f.read()
             
-        with open(env_path, "w", encoding="utf-8") as f:
-            f.write(new_content)
+            if "DEVICE_PIN=" in content:
+                new_content = re.sub(r'DEVICE_PIN=.*', f'DEVICE_PIN={clean_pin}', content)
+            else:
+                new_content = content.rstrip() + f"\nDEVICE_PIN={clean_pin}\n"
+                
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            saved_any = True
+        except Exception:
+            pass
+    
+    if saved_any:
         log.info(f"Verified correct device PIN saved to .env")
         return True
-    except Exception as e:
-        log.warning(f"Could not persist DEVICE_PIN to .env: {e}")
-        return False
+    return False
 
 
 def _adb(*args, serial: str = "") -> str:
@@ -400,66 +415,82 @@ def get_device_matrix() -> List[Dict[str, Any]]:
 def unlock_device(serial: str, pin: str = "") -> bool:
     """
     Resilient screen unlock sequence:
-      1. KEYCODE_WAKEUP (224) - Wakes display without toggling off if already on
-      2. wm dismiss-keyguard - Native Android WindowManager keyguard dismissal
-      3. Fluid vertical swipe (85% height to 15% height, 350ms) for Swipe/Smart-Lock
-      4. KEYCODE_HOME (3) and KEYCODE_MENU (82)
-      5. Silent background PIN entry if configured in .env or passed
-      6. Verifies keyguard state — returns True only if phone is genuinely unlocked
+      1. If already awake and unlocked, return True immediately.
+      2. KEYCODE_WAKEUP (224) - Wakes display safely.
+      3. wm dismiss-keyguard - Native WindowManager dismissal.
+      4. Fluid vertical swipe up (85% height to 15% height, 300ms).
+      5. If Swipe/Smart-Lock active, verify if already unlocked (Zero-PIN).
+      6. If PIN is provided or saved in .env, silently type it into the keypad + ENTER.
+      7. Verify keyguard state — save working PIN if verified.
     """
     try:
+        # Step 0: Check if already awake and unlocked
+        if _is_screen_on(serial) and not _is_keyguard_locked(serial):
+            log.info(f"Device {serial} is already awake and unlocked.")
+            return True
+
         # Step 1: Wake display safely
         _adb("shell", "input", "keyevent", "224", serial=serial)
-        time.sleep(0.15)
+        time.sleep(0.25)
         
         # Step 2: Request keyguard dismissal
         _adb("shell", "wm", "dismiss-keyguard", serial=serial)
         time.sleep(0.15)
         
-        # Step 3: Fluid full-screen swipe up (covers Samsung One UI, Pixel, Xiaomi, etc.)
+        # Step 3: Swipe up to dismiss swipe screen or reveal PIN pad
         w, h = _get_screen_dimensions(serial)
         cx = w // 2
         y_start = int(h * 0.85)
         y_end = int(h * 0.15)
-        _adb("shell", "input", "swipe", str(cx), str(y_start), str(cx), str(y_end), "350", serial=serial)
-        time.sleep(0.2)
+        _adb("shell", "input", "swipe", str(cx), str(y_start), str(cx), str(y_end), "300", serial=serial)
+        time.sleep(0.3)
         
-        # Step 4: Press KEYCODE_HOME (3) and KEYCODE_MENU (82)
-        _adb("shell", "input", "keyevent", "3", serial=serial)
-        _adb("shell", "input", "keyevent", "82", serial=serial)
-        time.sleep(0.1)
-        _adb("shell", "input", "keyevent", "3", serial=serial)
+        # Step 4: Check if swipe / Smart Lock unlocked it (Zero-PIN)
+        if not _is_keyguard_locked(serial):
+            _adb("shell", "input", "keyevent", "3", serial=serial)  # Go to home
+            log.info(f"Device {serial} unlocked via Zero-PIN swipe / Smart Lock.")
+            return True
 
-        # Step 5: Silent background PIN entry if configured in .env or passed
+        # Step 5: Background PIN Entry (Auto-types saved PIN from .env or argument)
         actual_pin = pin
         if not actual_pin:
             pins = _get_pins()
             actual_pin = pins[0] if pins and pins[0] else ""
 
         if actual_pin:
+            # Type into the focused PIN pad
             _adb("shell", "input", "text", actual_pin, serial=serial)
-            time.sleep(0.15)
+            time.sleep(0.2)
             _adb("shell", "input", "keyevent", "66", serial=serial)   # KEYCODE_ENTER
             _adb("shell", "input", "keyevent", "160", serial=serial)  # KEYCODE_NUMPAD_ENTER
-            time.sleep(0.2)
-            _adb("shell", "input", "keyevent", "3", serial=serial)   # Return to home
+            time.sleep(0.4)
             
-            # Verify if unlock was genuinely successful before capturing/saving the PIN
-            time.sleep(0.35)
+            # Verify if unlock was genuinely successful
             if not _is_keyguard_locked(serial):
                 save_verified_device_pin(actual_pin)
+                _adb("shell", "input", "keyevent", "3", serial=serial)   # Return to home
                 log.info(f"Verified working PIN for {serial} saved to .env")
+                return True
             else:
-                log.warning(f"Keyguard still locked on {serial}. PIN '{actual_pin}' was incorrect — discarded.")
+                log.warning(f"Keyguard still locked on {serial}. PIN '{actual_pin}' was incorrect.")
 
-        # Step 6: Keep screen awake while plugged into USB so it never locks again
+        # Step 6: Non-secure fallback attempt (KEYCODE_MENU 82)
+        if not actual_pin:
+            _adb("shell", "input", "keyevent", "82", serial=serial)
+            time.sleep(0.15)
+            _adb("shell", "input", "keyevent", "3", serial=serial)
+            time.sleep(0.2)
+            if not _is_keyguard_locked(serial):
+                log.info(f"Successfully unlocked device {serial} via menu fallback.")
+                return True
+
+        # Step 7: Keep screen awake while plugged into USB so it doesn't lock again
         try:
             _adb("shell", "settings", "put", "global", "stay_on_while_plugged_in", "3", serial=serial)
         except Exception:
             pass
 
-        # Final keyguard verification: return True ONLY if genuinely unlocked
-        time.sleep(0.2)
+        # Check final status
         if _is_keyguard_locked(serial):
             log.info(f"Device {serial} keyguard is still locked (requires PIN).")
             return False
