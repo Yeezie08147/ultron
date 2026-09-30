@@ -53,7 +53,7 @@ class LocalBrain:
 
     def __init__(self, model: str = ""):
         self._custom_model = model or os.getenv("LLM_MODEL_NAME", "")
-        self._standalone_url = os.getenv("STANDALONE_LLM_URL", "http://127.0.0.1:8080/v1")
+        self._standalone_url = os.getenv("STANDALONE_LLM_URL", "http://127.0.0.1:8088/v1")
         self._lm_studio_url = os.getenv("LM_STUDIO_URL", "http://127.0.0.1:1234/v1")
         self._ollama_url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 
@@ -170,12 +170,11 @@ COMMAND PROTOCOLS:
                                     delta = chunk_data.get("choices", [{}])[0].get("delta", {}).get("content", "")
                                     if delta:
                                         buffer += delta
-                                        async for text in self._process_buffer(buffer):
-                                            yield text
+                                        yield delta
                                 except Exception:
                                     pass
-                        if buffer.strip():
-                            yield buffer.strip()
+                        async for text in self._process_buffer(buffer):
+                            yield text
                 return
             except Exception as e:
                 yield f"Neural stream interrupted: {e}, falling back to autonomous core."
@@ -203,12 +202,11 @@ COMMAND PROTOCOLS:
                                     text_piece = data.get("message", {}).get("content", "")
                                     if text_piece:
                                         buffer += text_piece
-                                        async for text in self._process_buffer(buffer):
-                                            yield text
+                                        yield text_piece
                                 except Exception:
                                     pass
-                        if buffer.strip():
-                            yield buffer.strip()
+                        async for text in self._process_buffer(buffer):
+                            yield text
                 return
             except Exception as e:
                 yield f"Ollama link interrupted: {e}, falling back to autonomous core."

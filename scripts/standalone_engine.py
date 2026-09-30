@@ -25,7 +25,7 @@ from typing import Optional
 ULTRON_HOME = Path(os.getenv("USERPROFILE" if sys.platform == "win32" else "HOME", ".")) / ".ultron"
 BIN_DIR = ULTRON_HOME / "bin"
 MODELS_DIR = ULTRON_HOME / "models"
-PORT = 8080
+PORT = 8088
 
 DEFAULT_MODEL_URL = "https://huggingface.co/HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive/resolve/main/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf"
 DEFAULT_MODEL_FILENAME = "Qwen3.5-9B-Uncensored-Q4_K_M.gguf"
@@ -36,19 +36,38 @@ LIGHT_MODEL_FILENAME = "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
 
 
 def get_llama_server_path() -> Optional[Path]:
-    """Find llama-server binary in ~/.ultron/bin or system PATH."""
+    """Find llama-server binary in ~/.ultron/bin, system PATH, WinGet, or Homebrew."""
     exe_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
     
-    # Check ~/.ultron/bin/
+    # 1. Check ~/.ultron/bin/
     local_bin = BIN_DIR / exe_name
     if local_bin.exists():
         return local_bin
     
-    # Check system PATH
+    # 2. Check system PATH
     which_path = shutil.which("llama-server")
     if which_path:
         return Path(which_path)
-    
+
+    # 3. Windows WinGet Package Locations
+    if sys.platform == "win32":
+        import glob
+        local_app = os.getenv("LOCALAPPDATA", "")
+        if local_app:
+            matches = glob.glob(f"{local_app}/Microsoft/WinGet/Packages/**/{exe_name}", recursive=True)
+            if matches:
+                return Path(matches[0])
+            win_apps = Path(local_app) / "Microsoft" / "WindowsApps" / exe_name
+            if win_apps.exists():
+                return win_apps
+
+    # 4. macOS Homebrew standard locations
+    if sys.platform == "darwin":
+        for hb in ["/opt/homebrew/bin/llama-server", "/usr/local/bin/llama-server"]:
+            p = Path(hb)
+            if p.exists():
+                return p
+
     return None
 
 
@@ -117,12 +136,39 @@ def install_llama_binary() -> Optional[Path]:
         # Windows winget attempt
         if shutil.which("winget"):
             print("[*] Installing llama.cpp via winget (no GUI required)...")
-            res = subprocess.run(["winget", "install", "ggml.llamacpp", "--accept-package-agreements", "--accept-source-agreements"], check=False)
+            res = subprocess.run(["winget", "install", "ggml.llamacpp", "--source", "winget", "--accept-package-agreements", "--accept-source-agreements"], check=False)
             which_path = shutil.which("llama-server")
             if which_path:
                 return Path(which_path)
 
     return get_llama_server_path()
+
+
+def find_local_gguf(preferred: str = "") -> Optional[Path]:
+    """Scan ~/.ultron/models/ and existing cache directories for GGUF files."""
+    # 1. Check ~/.ultron/models/
+    if MODELS_DIR.exists():
+        if preferred:
+            for p in MODELS_DIR.rglob("*.gguf"):
+                if preferred.lower() in p.name.lower():
+                    return p
+        models = [p for p in MODELS_DIR.rglob("*.gguf") if p.stat().st_size > 100_000_000]
+        if models:
+            return models[0]
+
+    # 2. Check ~/.lmstudio/models/ if user has existing models cached
+    user_home = Path(os.getenv("USERPROFILE" if sys.platform == "win32" else "HOME", "."))
+    lm_models = user_home / ".lmstudio" / "models"
+    if lm_models.exists():
+        if preferred:
+            for p in lm_models.rglob("*.gguf"):
+                if preferred.lower() in p.name.lower():
+                    return p
+        models = [p for p in lm_models.rglob("*.gguf") if p.stat().st_size > 100_000_000]
+        if models:
+            return models[0]
+
+    return None
 
 
 def start_server(model_name: str = "default", background: bool = True):
@@ -138,24 +184,29 @@ def start_server(model_name: str = "default", background: bool = True):
         bin_path = install_llama_binary()
         if not bin_path:
             print("[ERROR] Could not install llama-server automatically.")
-            print("On Windows: winget install ggml.llamacpp")
+            print("On Windows: winget install ggml.llamacpp --source winget")
             print("On macOS:   brew install llama.cpp")
             return False
 
     # 2. Locate model
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    if model_name == "light":
-        model_file = MODELS_DIR / LIGHT_MODEL_FILENAME
-        model_url = LIGHT_MODEL_URL
+    existing_model = find_local_gguf(model_name if model_name != "default" else "")
+    if existing_model:
+        model_file = existing_model
+        print(f"[*] Detected local GGUF model: {model_file.name}")
     else:
-        model_file = MODELS_DIR / DEFAULT_MODEL_FILENAME
-        model_url = DEFAULT_MODEL_URL
+        if model_name == "light":
+            model_file = MODELS_DIR / LIGHT_MODEL_FILENAME
+            model_url = LIGHT_MODEL_URL
+        else:
+            model_file = MODELS_DIR / DEFAULT_MODEL_FILENAME
+            model_url = DEFAULT_MODEL_URL
 
-    if not model_file.exists():
-        print(f"[!] Model {model_file.name} not found in {MODELS_DIR}.")
-        ok = download_with_progress(model_url, model_file, label=f"Model ({model_file.name})")
-        if not ok:
-            return False
+        if not model_file.exists():
+            print(f"[!] Model {model_file.name} not found locally.")
+            ok = download_with_progress(model_url, model_file, label=f"Model ({model_file.name})")
+            if not ok:
+                return False
 
     print(f"\n[*] Starting ULTRON Standalone Neural Engine...")
     print(f"    Binary: {bin_path}")

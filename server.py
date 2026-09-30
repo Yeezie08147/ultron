@@ -1527,7 +1527,7 @@ _ollama_available: bool = False
 _ollama_model: str = "ultron:brain"
 
 async def _check_local_llms() -> dict:
-    """Probe for active Standalone Engine (8080), LM Studio (1234), or Ollama (11434)."""
+    """Probe for active Standalone Engine (8088), LM Studio (1234), or Ollama (11434)."""
     global _llm_checked_time, _standalone_available, _standalone_model, _lm_studio_available, _lm_studio_model, _ollama_available, _ollama_model
     now = time.time()
     if now - _llm_checked_time < 20.0:
@@ -1542,10 +1542,10 @@ async def _check_local_llms() -> dict:
     _llm_checked_time = now
     
     import httpx
-    # 1. Check Standalone Ultron Engine (llama-server on port 8080)
+    # 1. Check Standalone Ultron Engine (llama-server on port 8088)
     try:
         async with httpx.AsyncClient(timeout=0.3) as c:
-            r = await c.get("http://127.0.0.1:8080/v1/models")
+            r = await c.get("http://127.0.0.1:8088/v1/models")
             if r.status_code == 200:
                 models = [m.get("id", "") for m in r.json().get("data", [])]
                 _standalone_model = models[0] if models else "Qwen3.5-9B-Uncensored"
@@ -1661,7 +1661,7 @@ async def generate_response(
     # Tier 3: Local Neural Engine (Standalone llama-server [8080], LM Studio [1234], or Ollama [11434])
     llms = await _check_local_llms()
 
-    # 3a. Standalone Engine (http://127.0.0.1:8080/v1)
+    # 3a. Standalone Engine (http://127.0.0.1:8088/v1)
     if llms["standalone"]:
         try:
             msgs = [{"role": "system", "content": system_prompt}]
@@ -1671,7 +1671,7 @@ async def generate_response(
 
             async with httpx.AsyncClient(timeout=15.0) as c:
                 resp = await c.post(
-                    "http://127.0.0.1:8080/v1/chat/completions",
+                    "http://127.0.0.1:8088/v1/chat/completions",
                     json={
                         "model": llms["standalone_model"],
                         "messages": msgs,
