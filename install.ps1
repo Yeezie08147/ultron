@@ -140,8 +140,34 @@ Write-Host "$e[38;5;208m$e[1m===================================================
 Write-Host "  You can now use ULTRON directly from ANY terminal or directory:"
 Write-Host ""
 Write-Host "    ultron           - Launch the Interactive Terminal CLI"
-Write-Host "    ultron-gui       - Launch the Holographic Desktop GUI"
+Write-Host "    ultron /model    - Switch or configure AI neural models"
 Write-Host "    ultron /devices  - Quick device matrix status query"
 Write-Host ""
 Write-Host "  Web HUD: Open http://localhost:8340 in your browser."
 Write-Host "======================================================================"
+
+# -- Step 7: Optional Model Configuration --
+Write-Host ""
+Write-Host "$e[38;5;208m$e[1m======================================================================$e[0m"
+Write-Host "$e[38;5;208m$e[1m   AI NEURAL BACKEND INITIALIZATION$e[0m"
+Write-Host "$e[38;5;208m$e[1m======================================================================$e[0m"
+Write-Host "  Select an AI model option to configure now (or skip to choose in CLI):"
+Write-Host "    [1] Qwen 3.5 9B Uncensored (5.3 GB) - Supreme Uncensored Intelligence [Recommended]"
+Write-Host "    [2] Ultra-Light 1.5B (1.1 GB)       - Ultra-Fast, Low RAM (<8GB)"
+Write-Host "    [3] Skip / Pure Autonomous Core     - 0 MB, Instant Offline System Control"
+Write-Host ""
+$Choice = Read-Host "  Selection [1/2/3] (Press Enter for 1)"
+$VenvPy = "$InstallDir\.venv\Scripts\python.exe"
+if (-not (Test-Path $VenvPy)) {
+    $VenvPy = $PythonCmd
+}
+
+if ($Choice -eq "2") {
+    & $VenvPy "$InstallDir\scripts\standalone_engine.py" start light
+} elseif ($Choice -eq "3") {
+    & $VenvPy -c "import json, pathlib; pathlib.Path('$InstallDir/config.json').write_text(json.dumps({'model_choice': 'autonomous'}))"
+    Write-Host "$e[32m[OK] Pure Autonomous Core configured (0 MB).$e[0m"
+} else {
+    & $VenvPy "$InstallDir\scripts\standalone_engine.py" start default
+}
+

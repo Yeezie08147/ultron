@@ -22,6 +22,14 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+# Ensure UTF-8 console output encoding on Windows
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 ULTRON_HOME = Path(os.getenv("USERPROFILE" if sys.platform == "win32" else "HOME", ".")) / ".ultron"
 BIN_DIR = ULTRON_HOME / "bin"
 MODELS_DIR = ULTRON_HOME / "models"
@@ -244,6 +252,73 @@ def start_server(model_name: str = "default", background: bool = True):
         return True
 
 
+CONFIG_FILE = ULTRON_HOME / "config.json"
+
+
+def get_model_config() -> dict:
+    """Read ~/.ultron/config.json if it exists."""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def save_model_config(choice: str):
+    """Save selected model choice to ~/.ultron/config.json."""
+    ULTRON_HOME.mkdir(parents=True, exist_ok=True)
+    cfg = get_model_config()
+    cfg["model_choice"] = choice
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception as e:
+        print(f"[!] Warning: Could not save config: {e}")
+
+
+def interactive_model_menu(force: bool = False) -> str:
+    """Prompt user to choose Qwen 3.5 Uncensored, Ultra-Light 1.5B, or Autonomous Core."""
+    cfg = get_model_config()
+    if not force and cfg.get("model_choice"):
+        return cfg["model_choice"]
+
+    print("\n" + "=" * 70)
+    print("   ULTRON // NEURAL BACKEND INITIALIZATION & SETUP")
+    print("=" * 70)
+    print("Choose your AI engine configuration:\n")
+    print("  [1] Qwen 3.5 9B Uncensored (5.3 GB) — Maximum Uncensored Intelligence [Recommended]")
+    print("      • Fully uncensored, zero refusal policy, deep reasoning, 8GB+ RAM/VRAM")
+    print("\n  [2] Ultra-Light Qwen 2.5 1.5B (1.1 GB) — Ultra-Fast, Low RAM (<8GB)")
+    print("      • Lightning speed, minimal battery/CPU footprint, ideal for laptops")
+    print("\n  [3] Pure Autonomous Core (0 MB) — 100% Free Offline System Control (No Download)")
+    print("      • Instant launch, desktop automation, device matrix, DuckDuckGo research")
+    print("\n" + "-" * 70)
+
+    try:
+        choice = input("Enter choice [1/2/3] (Press Enter for 1): ").strip()
+    except (KeyboardInterrupt, EOFError):
+        choice = "1"
+
+    if choice == "2":
+        selected = "light"
+        print("\n[*] Selected: Ultra-Light 1.5B model.")
+    elif choice == "3":
+        selected = "autonomous"
+        print("\n[*] Selected: Pure Autonomous Offline Core (Zero Download).")
+    else:
+        selected = "qwen"
+        print("\n[*] Selected: Qwen 3.5 9B Uncensored.")
+
+    save_model_config(selected)
+
+    if selected in ("qwen", "light"):
+        start_server(model_name=selected, background=True)
+
+    return selected
+
+
 def stop_server():
     """Stop the running standalone engine."""
     exe_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
@@ -275,13 +350,15 @@ def main():
         start_server(model_type, background=True)
     elif cmd in ("stop", "--stop"):
         stop_server()
+    elif cmd in ("select", "menu", "--menu", "setup", "--setup"):
+        interactive_model_menu(force=True)
     elif cmd in ("download", "--download"):
         model_type = args[1] if len(args) > 1 else "default"
         target = MODELS_DIR / (LIGHT_MODEL_FILENAME if model_type == "light" else DEFAULT_MODEL_FILENAME)
         url = LIGHT_MODEL_URL if model_type == "light" else DEFAULT_MODEL_URL
         download_with_progress(url, target, label=f"Model ({target.name})")
     else:
-        print("Usage: python scripts/standalone_engine.py [status|start|stop|download]")
+        print("Usage: python scripts/standalone_engine.py [status|start|stop|select|download]")
 
 
 if __name__ == "__main__":

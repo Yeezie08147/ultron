@@ -170,3 +170,26 @@ echo ""
 echo -e "${CYAN}If 'ultron' is not recognized immediately in your current terminal, reload your shell:${RESET}"
 echo -e "  source ~/.zshrc"
 echo ""
+
+# -- Step 7: Optional Model Configuration --
+echo -e "${ORANGE}${BOLD}"
+echo "======================================================================"
+echo "   AI NEURAL BACKEND INITIALIZATION"
+echo "======================================================================"
+echo -e "${RESET}"
+echo "Select an AI model option to configure now (or skip to choose in CLI):"
+echo "  [1] Qwen 3.5 9B Uncensored (5.3 GB) - Supreme Uncensored Intelligence [Recommended]"
+echo "  [2] Ultra-Light 1.5B (1.1 GB)       - Ultra-Fast, Low RAM (<8GB)"
+echo "  [3] Skip / Pure Autonomous Core     - 0 MB, Instant Offline System Control"
+echo ""
+read -t 20 -p "Selection [1/2/3] (Press Enter for 1, auto-skips in 20s): " CHOICE || CHOICE="1"
+echo ""
+
+if [ "$CHOICE" = "2" ]; then
+    "$VENV_PY" "$INSTALL_DIR/scripts/standalone_engine.py" start light || true
+elif [ "$CHOICE" = "3" ]; then
+    "$VENV_PY" -c "import json, pathlib; pathlib.Path('$INSTALL_DIR/config.json').write_text(json.dumps({'model_choice': 'autonomous'}))" || true
+    echo -e "${GREEN}[OK] Pure Autonomous Core configured (0 MB).${RESET}"
+else
+    "$VENV_PY" "$INSTALL_DIR/scripts/standalone_engine.py" start default || true
+fi

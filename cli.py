@@ -483,8 +483,8 @@ def print_help():
   {Colors.BOLD}{Colors.CYAN}⚡ SYSTEM TELEMETRY & RECONNAISSANCE:{Colors.RESET}
     {Colors.ORANGE}/vitals{Colors.RESET} or {Colors.ORANGE}/stats{Colors.RESET}  Display PC CPU, RAM, disk, load & thermal telemetry
     {Colors.ORANGE}/network{Colors.RESET} or {Colors.ORANGE}/scan{Colors.RESET}  Execute local network node scan (IP, MAC, active nodes)
-    {Colors.ORANGE}/status{Colors.RESET}            Summary of Ultron core engines, matrix, and services
     {Colors.ORANGE}/engine [status|start|stop]{Colors.RESET} Standalone Local Engine (Zero LM Studio / Ollama needed)
+    {Colors.ORANGE}/model{Colors.RESET} or {Colors.ORANGE}/setup{Colors.RESET}         Choose model: Qwen 3.5 Uncensored vs Ultra-Light 1.5B
 
   {Colors.BOLD}{Colors.CYAN}👁️ VISION & GIMBAL TRACKING:{Colors.RESET}
     {Colors.ORANGE}/facetrack start{Colors.RESET}  Start OpenCV digital gimbal face tracking webcam window
@@ -584,6 +584,12 @@ async def execute_input(user_input: str):
     elif lower.startswith("/engine"):
         handle_engine_command(raw)
         return
+    elif lower in ("/model", "/models", "/setup"):
+        scripts_dir = Path(__file__).parent / "scripts"
+        standalone_script = scripts_dir / "standalone_engine.py"
+        if standalone_script.exists():
+            subprocess.run([sys.executable, str(standalone_script), "select"])
+        return
     elif lower.startswith("/"):
         print_err(f"Unknown command '{raw}'. Type / or /help for the complete Slash Command Guide.")
         return
@@ -663,6 +669,16 @@ async def cli_main():
             print(f"{Colors.GREEN}● Matrix Connected:{Colors.RESET} {names}")
         else:
             print(f"{Colors.GREY}○ Matrix Standby: No mobile devices connected.{Colors.RESET}")
+    # First-run model configuration prompt
+    cfg_file = Path(os.getenv("USERPROFILE" if sys.platform == "win32" else "HOME", ".")) / ".ultron" / "config.json"
+    if not cfg_file.exists():
+        try:
+            standalone_script = Path(__file__).parent / "scripts" / "standalone_engine.py"
+            if standalone_script.exists():
+                subprocess.run([sys.executable, str(standalone_script), "select"])
+        except Exception:
+            pass
+
     print()
 
     while True:
