@@ -13,7 +13,14 @@ import time
 import asyncio
 import subprocess
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict, Any
+
+import logging
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("ultron.web").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.basicConfig(level=logging.WARNING)
 
 # Ensure UTF-8 console output encoding on Windows
 if sys.platform == "win32":
@@ -315,6 +322,32 @@ def handle_gui_command():
         print_err("desktop.py not found.")
 
 
+def handle_engine_command(raw: str):
+    """Manage standalone local neural engine (llama-server) without external apps."""
+    parts = raw.strip().split()
+    action = parts[1].lower() if len(parts) > 1 else "status"
+
+    scripts_dir = Path(__file__).parent / "scripts"
+    standalone_script = scripts_dir / "standalone_engine.py"
+
+    if not standalone_script.exists():
+        print_err("scripts/standalone_engine.py not found.")
+        return
+
+    if action in ("status", "check"):
+        subprocess.run([sys.executable, str(standalone_script), "status"])
+    elif action in ("start", "up"):
+        model_type = parts[2] if len(parts) > 2 else "default"
+        subprocess.run([sys.executable, str(standalone_script), "start", model_type])
+    elif action in ("stop", "down", "kill"):
+        subprocess.run([sys.executable, str(standalone_script), "stop"])
+    elif action in ("download", "pull"):
+        model_type = parts[2] if len(parts) > 2 else "default"
+        subprocess.run([sys.executable, str(standalone_script), "download", model_type])
+    else:
+        print_warn("Usage: /engine [status|start|stop|download]")
+
+
 def handle_status_command():
     """Display comprehensive system status."""
     print(f"\n{Colors.BOLD}{Colors.CYAN}--- ULTRON CORE MATRIX STATUS ---{Colors.RESET}")
@@ -451,6 +484,7 @@ def print_help():
     {Colors.ORANGE}/vitals{Colors.RESET} or {Colors.ORANGE}/stats{Colors.RESET}  Display PC CPU, RAM, disk, load & thermal telemetry
     {Colors.ORANGE}/network{Colors.RESET} or {Colors.ORANGE}/scan{Colors.RESET}  Execute local network node scan (IP, MAC, active nodes)
     {Colors.ORANGE}/status{Colors.RESET}            Summary of Ultron core engines, matrix, and services
+    {Colors.ORANGE}/engine [status|start|stop]{Colors.RESET} Standalone Local Engine (Zero LM Studio / Ollama needed)
 
   {Colors.BOLD}{Colors.CYAN}👁️ VISION & GIMBAL TRACKING:{Colors.RESET}
     {Colors.ORANGE}/facetrack start{Colors.RESET}  Start OpenCV digital gimbal face tracking webcam window
@@ -547,6 +581,9 @@ async def execute_input(user_input: str):
     elif lower in ("/status", "status"):
         handle_status_command()
         return
+    elif lower.startswith("/engine"):
+        handle_engine_command(raw)
+        return
     elif lower.startswith("/"):
         print_err(f"Unknown command '{raw}'. Type / or /help for the complete Slash Command Guide.")
         return
@@ -575,19 +612,27 @@ async def execute_input(user_input: str):
                 await handle_play_command("/play Back in Black AC/DC")
                 return
 
-    # 3. Local Neural Engine (LM Studio / Ollama Qwen3.5 Uncensored)
+    # 3. Local Neural Engine (Standalone Engine / LM Studio / Ollama / Autonomous Core)
     try:
         import ollama_brain
         brain = ollama_brain.LocalBrain()
         backend = await brain.detect_active_backend()
-        if backend.get("type") != "none":
-            model_disp = backend.get("model", "Local LLM")
-            backend_disp = "LM Studio" if backend["type"] == "lm_studio" else "Ollama"
-            print(f"\n{Colors.ORANGE}{Colors.BOLD}[ULTRON // {backend_disp} ({model_disp})]{Colors.RESET} ", end="", flush=True)
-            async for chunk in brain.respond_stream(raw):
-                print(chunk + " ", end="", flush=True)
-            print("\n")
-            return
+        b_type = backend.get("type", "autonomous")
+        model_disp = backend.get("model", "Autonomous Core")
+        if b_type == "standalone":
+            backend_disp = "Standalone Engine"
+        elif b_type == "lm_studio":
+            backend_disp = "LM Studio"
+        elif b_type == "ollama":
+            backend_disp = "Ollama"
+        else:
+            backend_disp = "Autonomous Core"
+
+        print(f"\n{Colors.ORANGE}{Colors.BOLD}[ULTRON // {backend_disp} ({model_disp})]{Colors.RESET} ", end="", flush=True)
+        async for chunk in brain.respond_stream(raw):
+            print(chunk, end="", flush=True)
+        print("\n")
+        return
     except Exception:
         pass
 

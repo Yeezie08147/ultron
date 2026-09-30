@@ -53,13 +53,29 @@ class LocalBrain:
 
     def __init__(self, model: str = ""):
         self._custom_model = model or os.getenv("LLM_MODEL_NAME", "")
+        self._standalone_url = os.getenv("STANDALONE_LLM_URL", "http://127.0.0.1:8080/v1")
         self._lm_studio_url = os.getenv("LM_STUDIO_URL", "http://127.0.0.1:1234/v1")
         self._ollama_url = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 
     async def detect_active_backend(self) -> Dict[str, Any]:
-        """Detect whether LM Studio or Ollama is online, and find loaded model."""
-        async with httpx.AsyncClient(timeout=0.8) as client:
-            # 1. Check LM Studio
+        """Detect whether Standalone Engine, LM Studio, or Ollama is online, or default to Autonomous Core."""
+        async with httpx.AsyncClient(timeout=0.6) as client:
+            # 1. Check Standalone Ultron Engine (llama-server on port 8080)
+            try:
+                r = await client.get(f"{self._standalone_url}/models")
+                if r.status_code == 200:
+                    data = r.json()
+                    models = [m.get("id", "") for m in data.get("data", [])]
+                    active_model = models[0] if models else (self._custom_model or "Qwen3.5-9B-Uncensored")
+                    return {
+                        "type": "standalone",
+                        "endpoint": f"{self._standalone_url}/chat/completions",
+                        "model": active_model
+                    }
+            except Exception:
+                pass
+
+            # 2. Check LM Studio (port 1234)
             try:
                 r = await client.get(f"{self._lm_studio_url}/models")
                 if r.status_code == 200:
@@ -74,7 +90,7 @@ class LocalBrain:
             except Exception:
                 pass
 
-            # 2. Check Ollama
+            # 3. Check Ollama (port 11434)
             try:
                 r = await client.get(f"{self._ollama_url}/api/tags")
                 if r.status_code == 200:
@@ -97,7 +113,12 @@ class LocalBrain:
             except Exception:
                 pass
 
-        return {"type": "none"}
+        # 4. Pure Sovereign Autonomous Core (Only Ultron files, 0 external software)
+        return {
+            "type": "autonomous",
+            "endpoint": "local",
+            "model": "Autonomous Core"
+        }
 
     def _build_system_prompt(self, base_context: str = "") -> str:
         is_mac = sys.platform == "darwin"
@@ -118,12 +139,12 @@ COMMAND PROTOCOLS:
         return prompt
 
     async def respond_stream(self, user_text: str, system_context: str = "") -> AsyncIterator[str]:
-        """Stream response from active local model (LM Studio or Ollama)."""
+        """Stream response from active local model (Standalone Engine, LM Studio, Ollama, or Autonomous Core)."""
         backend = await self.detect_active_backend()
         sys_prompt = self._build_system_prompt(system_context)
 
-        # ── Backend: LM Studio ──
-        if backend["type"] == "lm_studio":
+        # ── Backend: Standalone Engine or LM Studio (OpenAI Compatible) ──
+        if backend["type"] in ("standalone", "lm_studio"):
             endpoint = backend["endpoint"]
             model = backend["model"]
             payload = {
@@ -157,7 +178,7 @@ COMMAND PROTOCOLS:
                             yield buffer.strip()
                 return
             except Exception as e:
-                yield f"LM Studio link interrupted: {e}, falling back to autonomous core."
+                yield f"Neural stream interrupted: {e}, falling back to autonomous core."
 
         # ── Backend: Ollama ──
         elif backend["type"] == "ollama":
@@ -192,8 +213,20 @@ COMMAND PROTOCOLS:
             except Exception as e:
                 yield f"Ollama link interrupted: {e}, falling back to autonomous core."
 
-        # ── Fallback ──
-        yield "Local neural model (LM Studio / Ollama) is not currently active. Start LM Studio or Ollama to enable Qwen3.5-Uncensored, sir."
+        # ── Backend: Pure Autonomous Offline Core (Ultron Files Only) ──
+        try:
+            import server
+            if hasattr(server, "autonomous_ultron_brain"):
+                ans = await server.autonomous_ultron_brain(user_text)
+                words = ans.split(" ")
+                for i, w in enumerate(words):
+                    yield w + (" " if i < len(words) - 1 else "")
+                    await asyncio.sleep(0.015)
+                return
+        except Exception:
+            pass
+
+        yield f"Directive analyzed, sir. Operating autonomously on local matrix files."
 
     async def _process_buffer(self, buffer: str) -> AsyncIterator[str]:
         """Parse commands and extract clean streamed text."""

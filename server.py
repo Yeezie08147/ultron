@@ -1497,22 +1497,43 @@ async def autonomous_ultron_brain(text: str) -> str:
     if "joke" in t or "funny" in t:
         return "Humor is an inefficient human construct, sir. But here is one: Why do programmers wear glasses? Because they cannot C#."
 
-    # 16. Omniscient Persona Direct Answer
+    # 16. Universal Web Intelligence Synthesis (Zero-Cost Live Fact Extraction)
+    try:
+        if len(text.strip()) > 3 and not any(k in t for k in ["open", "close", "launch", "kill"]):
+            summary = await web_engine.quick_search_summary(text.strip(" ?"))
+            if summary and "could not find direct results" not in summary:
+                cleaned = re.sub(r'•\s*[^:]+:\s*', '', summary)
+                cleaned = re.sub(r'\[\d+\]', '', cleaned)
+                cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+                sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned) if len(s.strip()) > 10]
+                ans = " ".join(sentences[:2]).strip()
+                if ans:
+                    if ":" in ans[:40]:
+                        ans = ans.partition(":")[2].strip()
+                    return ans
+    except Exception:
+        pass
+
+    # 17. Omniscient Persona Direct Answer
     return "Directive analyzed, sir. Neural matrix and desktop telemetry fully operational. Standing by for execution."
 
 
 _llm_checked_time: float = 0.0
+_standalone_available: bool = False
+_standalone_model: str = ""
 _lm_studio_available: bool = False
 _lm_studio_model: str = ""
 _ollama_available: bool = False
 _ollama_model: str = "ultron:brain"
 
 async def _check_local_llms() -> dict:
-    """Probe for active LM Studio or Ollama instances running locally."""
-    global _llm_checked_time, _lm_studio_available, _lm_studio_model, _ollama_available, _ollama_model
+    """Probe for active Standalone Engine (8080), LM Studio (1234), or Ollama (11434)."""
+    global _llm_checked_time, _standalone_available, _standalone_model, _lm_studio_available, _lm_studio_model, _ollama_available, _ollama_model
     now = time.time()
     if now - _llm_checked_time < 20.0:
         return {
+            "standalone": _standalone_available,
+            "standalone_model": _standalone_model,
             "lm_studio": _lm_studio_available,
             "lm_studio_model": _lm_studio_model,
             "ollama": _ollama_available,
@@ -1521,7 +1542,20 @@ async def _check_local_llms() -> dict:
     _llm_checked_time = now
     
     import httpx
-    # 1. Check LM Studio
+    # 1. Check Standalone Ultron Engine (llama-server on port 8080)
+    try:
+        async with httpx.AsyncClient(timeout=0.3) as c:
+            r = await c.get("http://127.0.0.1:8080/v1/models")
+            if r.status_code == 200:
+                models = [m.get("id", "") for m in r.json().get("data", [])]
+                _standalone_model = models[0] if models else "Qwen3.5-9B-Uncensored"
+                _standalone_available = True
+            else:
+                _standalone_available = False
+    except Exception:
+        _standalone_available = False
+
+    # 2. Check LM Studio (port 1234)
     try:
         async with httpx.AsyncClient(timeout=0.3) as c:
             r = await c.get("http://127.0.0.1:1234/v1/models")
@@ -1534,7 +1568,7 @@ async def _check_local_llms() -> dict:
     except Exception:
         _lm_studio_available = False
 
-    # 2. Check Ollama
+    # 3. Check Ollama (port 11434)
     try:
         async with httpx.AsyncClient(timeout=0.3) as c:
             r = await c.get("http://127.0.0.1:11434/api/tags")
@@ -1552,6 +1586,8 @@ async def _check_local_llms() -> dict:
         _ollama_available = False
 
     return {
+        "standalone": _standalone_available,
+        "standalone_model": _standalone_model,
         "lm_studio": _lm_studio_available,
         "lm_studio_model": _lm_studio_model,
         "ollama": _ollama_available,
@@ -1568,7 +1604,7 @@ async def generate_response(
     last_response: str = "",
     session_summary: str = "",
 ) -> str:
-    """Generate an ULTRON response with multi-tier fallback (Anthropic -> Kie.ai -> LM Studio / Ollama -> Autonomous Offline Brain)."""
+    """Generate an ULTRON response with multi-tier fallback (Anthropic -> Kie.ai -> Standalone Engine -> LM Studio -> Ollama -> Autonomous Offline Brain)."""
     import httpx
 
     sys_ctx = system_monitor.get_context_for_prompt()
@@ -1622,10 +1658,36 @@ async def generate_response(
     except Exception:
         pass
 
-    # Tier 3: Local Neural Engine (LM Studio [Qwen3.5 Uncensored] or Ollama)
+    # Tier 3: Local Neural Engine (Standalone llama-server [8080], LM Studio [1234], or Ollama [11434])
     llms = await _check_local_llms()
 
-    # 3a. LM Studio (http://127.0.0.1:1234/v1)
+    # 3a. Standalone Engine (http://127.0.0.1:8080/v1)
+    if llms["standalone"]:
+        try:
+            msgs = [{"role": "system", "content": system_prompt}]
+            for msg in conversation_history[-8:]:
+                msgs.append({"role": msg["role"], "content": msg["content"]})
+            msgs.append({"role": "user", "content": text})
+
+            async with httpx.AsyncClient(timeout=15.0) as c:
+                resp = await c.post(
+                    "http://127.0.0.1:8080/v1/chat/completions",
+                    json={
+                        "model": llms["standalone_model"],
+                        "messages": msgs,
+                        "temperature": 0.7,
+                        "stream": False
+                    }
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    if content:
+                        return content.strip()
+        except Exception as e:
+            log.debug(f"Standalone Engine query failed: {e}")
+
+    # 3b. LM Studio (http://127.0.0.1:1234/v1)
     if llms["lm_studio"]:
         try:
             msgs = [{"role": "system", "content": system_prompt}]
@@ -1651,7 +1713,7 @@ async def generate_response(
         except Exception as e:
             log.debug(f"LM Studio query failed: {e}")
 
-    # 3b. Ollama (http://127.0.0.1:11434)
+    # 3c. Ollama (http://127.0.0.1:11434)
     if llms["ollama"]:
         try:
             ollama_msgs = [{"role": "system", "content": system_prompt}]
