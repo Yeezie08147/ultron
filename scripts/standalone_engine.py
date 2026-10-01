@@ -36,7 +36,7 @@ MODELS_DIR = ULTRON_HOME / "models"
 PORT = 8088
 
 DEFAULT_MODEL_URL = "https://huggingface.co/HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive/resolve/main/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf"
-DEFAULT_MODEL_FILENAME = "Qwen3.5-9B-Uncensored-Q4_K_M.gguf"
+DEFAULT_MODEL_FILENAME = "HackerMode-9B.gguf"
 
 # Optional ultra-light 1.5B model for low-spec systems (<8GB RAM)
 LIGHT_MODEL_URL = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
@@ -90,38 +90,75 @@ def is_engine_running() -> bool:
         return False
 
 
-def download_with_progress(url: str, dest_path: Path, label: str = "File"):
-    """Download file with visual progress bar."""
+def download_with_progress(url: str, dest_path: Path, label: str = "Hacker Mode"):
+    """Download file with visual progress bar, resume support, and path sanitization."""
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = dest_path.with_suffix(".downloading")
 
     print(f"\n[*] Downloading {label}...")
-    print(f"    Source: {url}")
-    print(f"    Target: {dest_path}")
-
-    def reporthook(block_num, block_size, total_size):
-        downloaded = block_num * block_size
-        if total_size > 0:
-            percent = min(100.0, downloaded * 100.0 / total_size)
-            mb_down = downloaded / (1024 * 1024)
-            mb_total = total_size / (1024 * 1024)
-            bar = "#" * int(percent // 2) + "-" * (50 - int(percent // 2))
-            sys.stdout.write(f"\r    [{bar}] {percent:.1f}% ({mb_down:.1f}/{mb_total:.1f} MB)")
-            sys.stdout.flush()
+    print(f"    Mode:   {label} (Neural Engine)")
 
     try:
-        urllib.request.urlretrieve(url, str(temp_path), reporthook=reporthook)
+        import ssl
+        ctx = ssl._create_unverified_context()
+    except Exception:
+        ctx = None
+
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    existing_bytes = temp_path.stat().st_size if temp_path.exists() else 0
+    if existing_bytes > 0:
+        headers["Range"] = f"bytes={existing_bytes}-"
+        print(f"    Resuming download from {existing_bytes / (1024 * 1024):.1f} MB...")
+
+    req = urllib.request.Request(url, headers=headers)
+
+    try:
+        mode = "ab" if existing_bytes > 0 else "wb"
+        with urllib.request.urlopen(req, context=ctx, timeout=60) as resp, open(temp_path, mode) as f:
+            status = getattr(resp, "status", 200)
+            if existing_bytes > 0 and status != 206:
+                existing_bytes = 0
+                f.seek(0)
+                f.truncate()
+
+            content_len = resp.headers.get("content-length")
+            total_size = (int(content_len) + existing_bytes) if content_len else 0
+            downloaded = existing_bytes
+            start_time = time.time()
+            last_print = 0
+
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+                downloaded += len(chunk)
+
+                now = time.time()
+                if now - last_print > 0.4:
+                    last_print = now
+                    elapsed = now - start_time
+                    speed = (downloaded - existing_bytes) / (elapsed + 0.001) / (1024 * 1024)
+                    if total_size > 0:
+                        pct = min(100.0, (downloaded * 100.0) / total_size)
+                        mb_down = downloaded / (1024 * 1024)
+                        mb_tot = total_size / (1024 * 1024)
+                        bar = "#" * int(pct // 2) + "-" * (50 - int(pct // 2))
+                        sys.stdout.write(f"\r    [{bar}] {pct:.1f}% ({mb_down:.1f}/{mb_tot:.1f} MB) @ {speed:.2f} MB/s")
+                    else:
+                        mb_down = downloaded / (1024 * 1024)
+                        sys.stdout.write(f"\r    Downloaded {mb_down:.1f} MB @ {speed:.2f} MB/s")
+                    sys.stdout.flush()
+
         print()
         if temp_path.exists():
             if dest_path.exists():
                 dest_path.unlink()
             temp_path.rename(dest_path)
-        print(f"[OK] Download complete: {dest_path.name}")
+        print(f"[OK] Download complete: {label}")
         return True
     except Exception as e:
         print(f"\n[ERROR] Download failed: {e}")
-        if temp_path.exists():
-            temp_path.unlink()
         return False
 
 
@@ -156,7 +193,7 @@ def find_local_gguf(preferred: str = "") -> Optional[Path]:
     """Scan ~/.ultron/models/ and existing cache directories for GGUF files."""
     target_terms = []
     if preferred in ("default", "qwen", "hacker"):
-        target_terms = ["qwen3.5", "qwen-3.5", "hackermode", "hacker-mode", "qwen"]
+        target_terms = ["hackermode", "hacker-mode", "qwen3.5", "qwen-3.5"]
     elif preferred == "light":
         target_terms = ["1.5b", "light"]
     elif preferred:
@@ -169,26 +206,27 @@ def find_local_gguf(preferred: str = "") -> Optional[Path]:
                 name_lower = p.name.lower()
                 if any(t in name_lower for t in target_terms):
                     return p
-        else:
+        elif not preferred:
             models = [p for p in MODELS_DIR.rglob("*.gguf") if p.stat().st_size > 100_000_000]
             if models:
                 return models[0]
 
-    # 2. Check ~/.lmstudio/models/ if user has existing models cached
-    user_home = Path(os.getenv("USERPROFILE" if sys.platform == "win32" else "HOME", "."))
-    lm_models = user_home / ".lmstudio" / "models"
-    if lm_models.exists():
-        if target_terms:
-            for p in lm_models.rglob("*.gguf"):
-                name_lower = p.name.lower()
-                if any(t in name_lower for t in target_terms):
-                    return p
+    # 2. Check ~/.lmstudio/models/ only when not strictly seeking Hacker Mode
+    if preferred not in ("default", "qwen", "hacker"):
+        user_home = Path(os.getenv("USERPROFILE" if sys.platform == "win32" else "HOME", "."))
+        lm_models = user_home / ".lmstudio" / "models"
+        if lm_models.exists():
+            if target_terms:
+                for p in lm_models.rglob("*.gguf"):
+                    name_lower = p.name.lower()
+                    if any(t in name_lower for t in target_terms):
+                        return p
 
     return None
 
 
 def start_server(model_name: str = "default", background: bool = True):
-    """Start standalone llama-server on port 8080."""
+    """Start standalone llama-server on port 8088."""
     if is_engine_running():
         print(f"[OK] ULTRON Standalone Engine is ALREADY running on http://127.0.0.1:{PORT}/v1")
         return True
@@ -206,23 +244,25 @@ def start_server(model_name: str = "default", background: bool = True):
 
     # 2. Locate model
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    existing_model = find_local_gguf(model_name if model_name != "default" else "")
+    existing_model = find_local_gguf(model_name if model_name not in ("default", "qwen") else "hacker")
     if existing_model:
         model_file = existing_model
     else:
         if model_name == "light":
             model_file = MODELS_DIR / LIGHT_MODEL_FILENAME
             model_url = LIGHT_MODEL_URL
+            model_label = "Ultra-Light 1.5B"
         else:
             model_file = MODELS_DIR / DEFAULT_MODEL_FILENAME
             model_url = DEFAULT_MODEL_URL
+            model_label = "Hacker Mode"
 
         if not model_file.exists():
-            ok = download_with_progress(model_url, model_file, label="Hacker Mode Model")
+            ok = download_with_progress(model_url, model_file, label=model_label)
             if not ok:
                 return False
 
-    model_tag = "Hacker Mode" if (model_name in ("default", "qwen", "hacker") or "uncensored" in model_file.name.lower()) else ("Ultra-Light 1.5B" if "light" in model_name else model_file.stem)
+    model_tag = "Hacker Mode" if (model_name in ("default", "qwen", "hacker") or "hacker" in model_file.name.lower() or "uncensored" in model_file.name.lower()) else ("Ultra-Light 1.5B" if "light" in model_name else "Neural Core")
     print(f"\n[*] Starting ULTRON Neural Engine...")
     print(f"    Mode:   {model_tag}")
     print(f"    Port:   {PORT}")
@@ -249,7 +289,7 @@ def start_server(model_name: str = "default", background: bool = True):
             time.sleep(1)
             if is_engine_running():
                 print(f"[SUCCESS] ULTRON Standalone Neural Engine ONLINE on http://127.0.0.1:{PORT}/v1")
-                print(f"Zero external software required. 100% self-contained in {ULTRON_HOME}")
+                print(f"[SUCCESS] Zero external software required. 100% self-contained local engine.")
                 return True
         print("[!] Engine process started, but model is still loading weights.")
         return True
@@ -327,11 +367,22 @@ def interactive_model_menu(force: bool = False) -> str:
 
 def stop_server():
     """Stop the running standalone engine."""
-    exe_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
     if sys.platform == "win32":
-        subprocess.run(["taskkill", "/F", "/IM", exe_name], capture_output=True)
-    else:
-        subprocess.run(["killall", exe_name], capture_output=True)
+        try:
+            out = subprocess.check_output(f"netstat -ano | findstr :{PORT}", shell=True, text=True)
+            for line in out.strip().splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and "LISTENING" in parts[3].upper():
+                    pid = parts[4]
+                    subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True)
+        except Exception:
+            pass
+    exe_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
+    if is_engine_running():
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/F", "/IM", exe_name], capture_output=True)
+        else:
+            subprocess.run(["killall", exe_name], capture_output=True)
     time.sleep(1)
     if not is_engine_running():
         print("[OK] Standalone engine stopped.")
@@ -362,7 +413,7 @@ def main():
         model_type = args[1] if len(args) > 1 else "default"
         target = MODELS_DIR / (LIGHT_MODEL_FILENAME if model_type == "light" else DEFAULT_MODEL_FILENAME)
         url = LIGHT_MODEL_URL if model_type == "light" else DEFAULT_MODEL_URL
-        download_with_progress(url, target, label=f"Model ({target.name})")
+        download_with_progress(url, target, label="Ultra-Light 1.5B" if model_type == "light" else "Hacker Mode")
     else:
         print("Usage: python scripts/standalone_engine.py [status|start|stop|select|download]")
 
