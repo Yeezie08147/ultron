@@ -61,6 +61,11 @@ try:
 except ImportError:
     face_tracking = None
 
+try:
+    import vision_engine
+except ImportError:
+    vision_engine = None
+
 
 # ── ANSI Terminal Colors ──
 class Colors:
@@ -428,6 +433,167 @@ def handle_stabilize_command():
     print_ultron(msg)
 
 
+async def handle_whatsapp_command(raw: str):
+    """Send autonomous WhatsApp message without manual typing."""
+    if not device_control:
+        print_err("Device control module not available.")
+        return
+    parts = raw.strip().split(maxsplit=2)
+    if len(parts) < 3:
+        print_err("Usage: /whatsapp <phone_number_or_contact> <message>")
+        return
+    target, msg = parts[1], parts[2]
+    print(f"{Colors.CYAN}Dispatching WhatsApp message to '{target}'...{Colors.RESET}")
+    res = await asyncio.to_thread(device_control.send_whatsapp, target, msg)
+    if res.get("success"):
+        print_ultron(res.get("message", "WhatsApp message sent."))
+    else:
+        print_err(res.get("message", "Failed to send WhatsApp message."))
+
+
+async def handle_call_command(raw: str):
+    """Initiate cellular phone call via connected device."""
+    if not device_control:
+        print_err("Device control module not available.")
+        return
+    parts = raw.strip().split()
+    if len(parts) < 2:
+        print_err("Usage: /call <phone_number>")
+        return
+    number = parts[1]
+    res = await asyncio.to_thread(device_control.make_phone_call, number)
+    if res.get("success"):
+        print_ultron(res.get("message", f"Calling {number}..."))
+    else:
+        print_err(res.get("message", f"Failed to call {number}."))
+
+
+async def handle_hangup_command():
+    """Terminate active cellular phone call."""
+    if not device_control:
+        print_err("Device control module not available.")
+        return
+    res = await asyncio.to_thread(device_control.end_phone_call)
+    print_ultron(res.get("message", "Call terminated."))
+
+
+async def handle_photo_command():
+    """Remotely snap photo on phone camera and download to PC."""
+    if not device_control:
+        print_err("Device control module not available.")
+        return
+    print(f"{Colors.CYAN}Snapping remote photo via mobile camera...{Colors.RESET}")
+    res = await asyncio.to_thread(device_control.take_remote_photo)
+    if res.get("success"):
+        print_ultron(res.get("message", "Photo captured!"))
+    else:
+        print_err(res.get("message", "Photo capture failed."))
+
+
+async def handle_phone_command(raw: str):
+    """Comprehensive mobile macro actions: tap, click, type, swipe, inspect, whatsapp, call, photo."""
+    if not device_control:
+        print_err("Device control module not available.")
+        return
+    parts = raw.strip().split(maxsplit=2)
+    subcmd = parts[1].lower() if len(parts) > 1 else "inspect"
+
+    if subcmd in ("whatsapp", "wa", "msg"):
+        await handle_whatsapp_command(raw.replace("/phone", "", 1).strip())
+    elif subcmd in ("call", "dial"):
+        num = parts[2] if len(parts) > 2 else ""
+        await handle_call_command(f"/call {num}")
+    elif subcmd in ("hangup", "endcall", "end"):
+        await handle_hangup_command()
+    elif subcmd in ("photo", "snap", "pic"):
+        await handle_photo_command()
+    elif subcmd == "tap":
+        coords = parts[2].split() if len(parts) > 2 else []
+        if len(coords) >= 2:
+            x, y = coords[0], coords[1]
+            device_control._adb("shell", "input", "tap", str(x), str(y))
+            print_ultron(f"Tapped coordinates ({x}, {y}) on phone screen, sir.")
+        else:
+            print_err("Usage: /phone tap <x> <y>")
+    elif subcmd in ("click", "press"):
+        target_text = parts[2] if len(parts) > 2 else ""
+        if not target_text:
+            print_err("Usage: /phone click \"<button_text_or_id>\"")
+            return
+        res = await asyncio.to_thread(device_control.click_ui_element, target_text.strip('"').strip("'"))
+        if res.get("success"):
+            print_ultron(res.get("message"))
+        else:
+            print_err(res.get("message"))
+    elif subcmd in ("type", "write"):
+        text = parts[2] if len(parts) > 2 else ""
+        if not text:
+            print_err("Usage: /phone type \"<text>\"")
+            return
+        res = await asyncio.to_thread(device_control.type_on_phone, text.strip('"').strip("'"))
+        print_ultron(res.get("message"))
+    elif subcmd in ("swipe", "scroll"):
+        direction = parts[2].strip() if len(parts) > 2 else "up"
+        res = await asyncio.to_thread(device_control.swipe_on_phone, direction)
+        print_ultron(res.get("message"))
+    elif subcmd in ("inspect", "ui", "dump"):
+        print(f"{Colors.CYAN}Scanning active mobile UI elements...{Colors.RESET}")
+        elems = await asyncio.to_thread(device_control.dump_ui_elements)
+        if not elems:
+            print(f"  {Colors.YELLOW}No interactive UI elements detected or phone screen is off.{Colors.RESET}")
+        else:
+            print(f"\n{Colors.BOLD}{Colors.CYAN}========================================================================{Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.CYAN}                 MOBILE ON-SCREEN INTERACTIVE ELEMENTS{Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.CYAN}========================================================================{Colors.RESET}")
+            print(f"  {Colors.BOLD}{'LABEL / TEXT':<30} {'COORDINATES':<15} {'ID / RESOURCE'}{Colors.RESET}")
+            print(f"  {Colors.GREY}{'-'*70}{Colors.RESET}")
+            for el in elems[:15]:
+                label = el.get("text") or el.get("desc") or "[No Label]"
+                cx, cy = el.get("center", (0, 0))
+                res_id = el.get("id", "").split("/")[-1] if el.get("id") else ""
+                print(f"  {Colors.WHITE}{label[:28]:<30}{Colors.RESET} {Colors.ORANGE}({cx}, {cy}){Colors.RESET}       {Colors.GREY}{res_id[:25]}{Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.CYAN}========================================================================{Colors.RESET}")
+            print(f"  {Colors.GREY}Tap by label: {Colors.ORANGE}/phone click \"<label>\"{Colors.GREY} | Tap coords: {Colors.ORANGE}/phone tap <x> <y>{Colors.RESET}\n")
+    else:
+        print_err(f"Unknown phone subcommand '{subcmd}'. Options: whatsapp, call, hangup, photo, click, tap, type, swipe, inspect.")
+
+
+async def handle_look_command(raw: str):
+    """Ultron Screen Sense: inspects user desktop, explains errors, debugs code, answers queries."""
+    if not vision_engine:
+        print_err("Vision engine module not available.")
+        return
+    parts = raw.strip().split(maxsplit=2)
+    sub = parts[1].lower() if len(parts) > 1 else "summary"
+
+    mode = "summary"
+    query = ""
+    if sub in ("debug", "error", "errors", "traceback"):
+        mode = "debug"
+        print(f"\n{Colors.CYAN}[ULTRON VISION] Inspecting screen for compiler errors & stack traces...{Colors.RESET}")
+    elif sub in ("code", "syntax", "editor"):
+        mode = "code"
+        print(f"\n{Colors.CYAN}[ULTRON VISION] Analyzing visible code & editor architecture...{Colors.RESET}")
+    elif sub in ("ask", "query", "q"):
+        mode = "ask"
+        query = parts[2] if len(parts) > 2 else ""
+        if not query:
+            print_err("Usage: /look ask <question about your screen>")
+            return
+        print(f"\n{Colors.CYAN}[ULTRON VISION] Analyzing screen regarding: '{query}'...{Colors.RESET}")
+    else:
+        if len(parts) > 1 and sub not in ("summary", "screen", "now"):
+            mode = "ask"
+            query = raw.replace("/look", "", 1).replace("/screen", "", 1).strip()
+            print(f"\n{Colors.CYAN}[ULTRON VISION] Analyzing screen regarding: '{query}'...{Colors.RESET}")
+        else:
+            mode = "summary"
+            print(f"\n{Colors.CYAN}[ULTRON VISION] Observing active desktop workspace...{Colors.RESET}")
+
+    analysis = await vision_engine.analyze_screen_sense(query=query, mode=mode)
+    print(f"\n{Colors.BOLD}{Colors.ORANGE}[ULTRON SCREEN SENSE]{Colors.RESET} {analysis}\n")
+
+
 def handle_gui_command():
     """Launch the 3D Holographic Desktop GUI."""
     gui_script = os.path.join(ROOT_DIR, "desktop.py")
@@ -596,6 +762,14 @@ def print_help():
     {Colors.ORANGE}/unlock [pin]{Colors.RESET}      Unlock screen (Auto-types saved PIN or saves new working PIN)
     {Colors.ORANGE}/lock{Colors.RESET}              Put connected phone screen to sleep / lock
     {Colors.ORANGE}/battery{Colors.RESET}           Query connected phone battery level & power status
+    {Colors.ORANGE}/whatsapp <num> <msg>{Colors.RESET} Send WhatsApp message hands-free via phone
+    {Colors.ORANGE}/call <number>{Colors.RESET}         Initiate phone call on connected mobile device
+    {Colors.ORANGE}/hangup{Colors.RESET}                Terminate active phone call
+    {Colors.ORANGE}/photo{Colors.RESET}                 Remote snap photo on phone camera & download to PC
+    {Colors.ORANGE}/phone click "<text>"{Colors.RESET}  Autonomously find and tap on-screen button by label
+    {Colors.ORANGE}/phone tap <x> <y>{Colors.RESET}     Tap exact screen coordinates on phone
+    {Colors.ORANGE}/phone type "<text>"{Colors.RESET}   Type text into focused mobile input field
+    {Colors.ORANGE}/phone inspect{Colors.RESET}         Dump and map all active interactive UI elements
     {Colors.ORANGE}/app <name>{Colors.RESET}        Launch app on phone ({Colors.GREY}youtube, spotify, camera, settings{Colors.RESET})
     {Colors.ORANGE}/play <query>{Colors.RESET}      Search and stream YouTube audio across phone matrix
     {Colors.ORANGE}/pause{Colors.RESET}             Pause media playback on connected devices
@@ -606,9 +780,12 @@ def print_help():
     {Colors.ORANGE}/engine [status|start|stop]{Colors.RESET} Standalone Local Engine (Zero LM Studio / Ollama needed)
     {Colors.ORANGE}/model{Colors.RESET} or {Colors.ORANGE}/setup{Colors.RESET}         Choose model: Qwen 3.5 Uncensored vs Ultra-Light 1.5B
 
-  {Colors.BOLD}{Colors.CYAN}👁️ VISION & GIMBAL TRACKING:{Colors.RESET}
-    {Colors.ORANGE}/facetrack start{Colors.RESET}  Start OpenCV digital gimbal face tracking webcam window
-    {Colors.ORANGE}/facetrack stop{Colors.RESET}   Stop digital face tracking
+  {Colors.BOLD}{Colors.CYAN}👁️ VISION & SCREEN SENSE AI:{Colors.RESET}
+    {Colors.ORANGE}/look{Colors.RESET} or {Colors.ORANGE}/screen{Colors.RESET}    Ultron Screen Sense: observes and summarizes active workspace
+    {Colors.ORANGE}/look debug{Colors.RESET}            Inspect screen for compiler errors, exceptions & exact fixes
+    {Colors.ORANGE}/look code{Colors.RESET}             Analyze visible code in IDE, check syntax & missing imports
+    {Colors.ORANGE}/look ask <query>{Colors.RESET}      Ask Ultron any question about what is visible on your screen
+    {Colors.ORANGE}/facetrack [start|stop]{Colors.RESET} OpenCV digital gimbal face tracking webcam window
     {Colors.ORANGE}/stabilize{Colors.RESET}        Toggle digital optical flow video stabilization
 
   {Colors.BOLD}{Colors.CYAN}🖥️ DESKTOP & WORKSPACE CONTROLS:{Colors.RESET}
@@ -704,6 +881,24 @@ async def execute_input(user_input: str):
     elif lower.startswith("/engine"):
         handle_engine_command(raw)
         return
+    elif lower.startswith("/whatsapp") or lower.startswith("/wa"):
+        await handle_whatsapp_command(raw)
+        return
+    elif lower.startswith("/call") or lower.startswith("/dial"):
+        await handle_call_command(raw)
+        return
+    elif lower in ("/hangup", "hangup", "/endcall", "endcall"):
+        await handle_hangup_command()
+        return
+    elif lower in ("/photo", "photo", "/snap", "snap", "/pic"):
+        await handle_photo_command()
+        return
+    elif lower.startswith("/phone"):
+        await handle_phone_command(raw)
+        return
+    elif lower.startswith("/look") or lower.startswith("/screen") or lower in ("look", "screen", "see", "vision"):
+        await handle_look_command(raw)
+        return
     elif lower in ("/model", "/models", "/setup"):
         scripts_dir = Path(__file__).parent / "scripts"
         standalone_script = scripts_dir / "standalone_engine.py"
@@ -715,6 +910,25 @@ async def execute_input(user_input: str):
         return
 
     # 2. Fast Action Matching
+    if lower.startswith("send whatsapp") or lower.startswith("whatsapp"):
+        await handle_whatsapp_command(raw)
+        return
+    elif lower.startswith("call ") or lower.startswith("dial "):
+        await handle_call_command(raw)
+        return
+    elif lower in ("hang up", "end call", "hangup", "disconnect call"):
+        await handle_hangup_command()
+        return
+    elif lower in ("take a photo", "take photo", "snap photo", "take picture"):
+        await handle_photo_command()
+        return
+    elif lower in ("look at my screen", "what's on my screen", "what is on my screen", "describe my screen", "check my screen"):
+        await handle_look_command("/look")
+        return
+    elif lower in ("debug my screen", "check errors", "find error", "what is the error"):
+        await handle_look_command("/look debug")
+        return
+
     if server:
         act = server.detect_action_fast(raw)
         if act:

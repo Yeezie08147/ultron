@@ -1870,3 +1870,314 @@ def auto_unlock_captive_portal() -> dict:
             "error": str(e),
             "message": f"Connectivity probe check error: {e}"
         }
+
+
+# ── Autonomous Mobile App Actions & Macro Automation ──
+
+def send_whatsapp(target: str, message: str, serial: str = "") -> dict:
+    """
+    Autonomously send a WhatsApp message without touching the phone:
+      - If target contains digits: clean phone number and dispatch via deep link
+      - If target is a contact name: search contact, open chat, and type message
+      - Automatically locates and taps the send button
+    """
+    target_serial = serial
+    if not target_serial:
+        devices = discover_devices()
+        if not devices:
+            return {"success": False, "message": "No mobile device connected via ADB."}
+        target_serial = devices[0]
+
+    # Wake screen first
+    unlock_device(target_serial)
+    time.sleep(0.5)
+
+    clean_digits = re.sub(r'[^0-9]', '', target)
+    from urllib.parse import quote
+    encoded_msg = quote(message)
+
+    try:
+        if len(clean_digits) >= 7:
+            # Direct WhatsApp API intent
+            intent_url = f"https://api.whatsapp.com/send?phone={clean_digits}&text={encoded_msg}"
+            _adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", f'"{intent_url}"', "com.whatsapp", serial=target_serial)
+            time.sleep(2.0)
+            
+            # Press send button or simulate enter
+            _adb("shell", "input", "keyevent", "66", serial=target_serial)  # KEYCODE_ENTER
+            time.sleep(0.3)
+            _adb("shell", "input", "keyevent", "160", serial=target_serial) # KEYCODE_NUMPAD_ENTER
+            time.sleep(0.5)
+            
+            # Also tap the standard WhatsApp send button location (bottom right)
+            w, h = _get_screen_dimensions(target_serial)
+            send_x = int(w * 0.92)
+            send_y = int(h * 0.95)
+            _adb("shell", "input", "tap", str(send_x), str(send_y), serial=target_serial)
+            
+            log.info(f"Dispatched WhatsApp to {clean_digits} on {target_serial}")
+            return {
+                "success": True,
+                "target": clean_digits,
+                "message": f"WhatsApp message dispatched to '{clean_digits}', sir: \"{message}\""
+            }
+        else:
+            # Contact name search
+            _adb("shell", "am", "start", "-n", "com.whatsapp/.HomeActivity", serial=target_serial)
+            time.sleep(1.5)
+            # Click search icon
+            w, h = _get_screen_dimensions(target_serial)
+            search_x = int(w * 0.72)
+            search_y = int(h * 0.06)
+            _adb("shell", "input", "tap", str(search_x), str(search_y), serial=target_serial)
+            time.sleep(0.5)
+            _adb("shell", "input", "text", target.replace(" ", "%s"), serial=target_serial)
+            time.sleep(1.0)
+            # Tap first search result
+            _adb("shell", "input", "tap", str(int(w * 0.5)), str(int(h * 0.18)), serial=target_serial)
+            time.sleep(1.0)
+            # Type message
+            _adb("shell", "input", "text", message.replace(" ", "%s"), serial=target_serial)
+            time.sleep(0.5)
+            # Send
+            _adb("shell", "input", "keyevent", "66", serial=target_serial)
+            send_x = int(w * 0.92)
+            send_y = int(h * 0.95)
+            _adb("shell", "input", "tap", str(send_x), str(send_y), serial=target_serial)
+            
+            return {
+                "success": True,
+                "target": target,
+                "message": f"Opened WhatsApp chat for '{target}' and sent: \"{message}\", sir."
+            }
+    except Exception as e:
+        return {"success": False, "message": f"WhatsApp automation error: {e}"}
+
+
+def make_phone_call(number: str, serial: str = "") -> dict:
+    """Initiate a cellular phone call autonomously."""
+    target_serial = serial
+    if not target_serial:
+        devices = discover_devices()
+        if not devices:
+            return {"success": False, "message": "No mobile device connected via ADB."}
+        target_serial = devices[0]
+
+    clean_number = re.sub(r'[^0-9+]', '', number)
+    if not clean_number:
+        return {"success": False, "message": "Valid phone number is required."}
+
+    unlock_device(target_serial)
+    time.sleep(0.3)
+
+    try:
+        out = _adb("shell", "am", "start", "-a", "android.intent.action.CALL", "-d", f"tel:{clean_number}", serial=target_serial)
+        if "SecurityException" in out or "Error" in out:
+            _adb("shell", "am", "start", "-a", "android.intent.action.DIAL", "-d", f"tel:{clean_number}", serial=target_serial)
+            time.sleep(0.8)
+            _adb("shell", "input", "keyevent", "5", serial=target_serial)
+        
+        log.info(f"Initiated call to {clean_number} on {target_serial}")
+        return {
+            "success": True,
+            "number": clean_number,
+            "message": f"Initiating voice call to {clean_number} on {target_serial}, sir."
+        }
+    except Exception as e:
+        return {"success": False, "message": f"Calling error: {e}"}
+
+
+def end_phone_call(serial: str = "") -> dict:
+    """Terminate the active cellular phone call."""
+    target_serial = serial
+    if not target_serial:
+        devices = discover_devices()
+        if not devices:
+            return {"success": False, "message": "No mobile device connected via ADB."}
+        target_serial = devices[0]
+
+    try:
+        _adb("shell", "input", "keyevent", "6", serial=target_serial)
+        return {"success": True, "message": f"Call ended on {target_serial}, sir."}
+    except Exception as e:
+        return {"success": False, "message": f"End call error: {e}"}
+
+
+def take_remote_photo(serial: str = "", pull_to_pc: bool = True) -> dict:
+    """
+    Remotely launch camera, capture a photo, and optionally pull to PC:
+      - Wakes device
+      - Launches camera intent
+      - Triggers hardware shutter
+      - Downloads latest JPEG to data/photos/
+    """
+    target_serial = serial
+    if not target_serial:
+        devices = discover_devices()
+        if not devices:
+            return {"success": False, "message": "No mobile device connected via ADB."}
+        target_serial = devices[0]
+
+    unlock_device(target_serial)
+    time.sleep(0.4)
+
+    try:
+        _adb("shell", "am", "start", "-a", "android.media.action.STILL_IMAGE_CAMERA", serial=target_serial)
+        time.sleep(1.2)
+        
+        _adb("shell", "input", "keyevent", "27", serial=target_serial)
+        _adb("shell", "input", "keyevent", "25", serial=target_serial)
+        time.sleep(1.5)
+
+        photo_path = ""
+        if pull_to_pc:
+            out = _adb("shell", "ls -t /sdcard/DCIM/Camera/*.jpg /sdcard/DCIM/Camera/*.png 2>/dev/null | head -n 1", serial=target_serial)
+            latest_remote = out.strip().splitlines()[0] if out and out.strip() else ""
+            if latest_remote:
+                save_dir = Path(ROOT_DIR) / "data" / "photos"
+                save_dir.mkdir(parents=True, exist_ok=True)
+                local_file = save_dir / f"photo_{int(time.time())}.jpg"
+                _adb("pull", latest_remote, str(local_file), serial=target_serial)
+                if local_file.exists():
+                    photo_path = str(local_file)
+
+        return {
+            "success": True,
+            "serial": target_serial,
+            "photo_path": photo_path,
+            "message": f"Photo snapped on {target_serial}!" + (f" Saved to {photo_path}." if photo_path else "")
+        }
+    except Exception as e:
+        return {"success": False, "message": f"Camera capture error: {e}"}
+
+
+def dump_ui_elements(serial: str = "") -> List[Dict[str, Any]]:
+    """
+    Dump active screen UI elements using Android UIAutomator XML:
+      - Returns elements with text, resource-id, content-desc, and center coordinates (cx, cy)
+    """
+    target_serial = serial
+    if not target_serial:
+        devices = discover_devices()
+        if not devices:
+            return []
+        target_serial = devices[0]
+
+    try:
+        _adb("shell", "uiautomator", "dump", "/sdcard/window_dump.xml", serial=target_serial)
+        xml_raw = _adb("shell", "cat", "/sdcard/window_dump.xml", serial=target_serial)
+        if not xml_raw:
+            return []
+
+        elements = []
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(xml_raw)
+        for node in root.iter("node"):
+            text = node.get("text", "")
+            desc = node.get("content-desc", "")
+            res_id = node.get("resource-id", "")
+            bounds = node.get("bounds", "")
+            
+            if (text or desc or res_id) and bounds:
+                m = re.findall(r'\[(\d+),(\d+)\]', bounds)
+                if len(m) == 2:
+                    x1, y1 = int(m[0][0]), int(m[0][1])
+                    x2, y2 = int(m[1][0]), int(m[1][1])
+                    cx = (x1 + x2) // 2
+                    cy = (y1 + y2) // 2
+                    elements.append({
+                        "text": text,
+                        "desc": desc,
+                        "id": res_id,
+                        "bounds": (x1, y1, x2, y2),
+                        "center": (cx, cy)
+                    })
+        return elements
+    except Exception as e:
+        log.warning(f"UI dump error: {e}")
+        return []
+
+
+def click_ui_element(query: str, serial: str = "") -> dict:
+    """
+    Find and tap a UI element by text, content-description, or resource ID:
+      - e.g. click_ui_element('Send') or click_ui_element('Next')
+    """
+    target_serial = serial
+    if not target_serial:
+        devices = discover_devices()
+        if not devices:
+            return {"success": False, "message": "No mobile device connected via ADB."}
+        target_serial = devices[0]
+
+    elements = dump_ui_elements(target_serial)
+    q_lower = query.lower().strip()
+
+    target_elem = None
+    for el in elements:
+        if q_lower == el.get("text", "").lower() or q_lower == el.get("desc", "").lower():
+            target_elem = el
+            break
+    if not target_elem:
+        for el in elements:
+            if q_lower in el.get("text", "").lower() or q_lower in el.get("desc", "").lower() or q_lower in el.get("id", "").lower():
+                target_elem = el
+                break
+
+    if target_elem:
+        cx, cy = target_elem["center"]
+        _adb("shell", "input", "tap", str(cx), str(cy), serial=target_serial)
+        label = target_elem.get("text") or target_elem.get("desc") or target_elem.get("id")
+        return {
+            "success": True,
+            "element": label,
+            "coords": (cx, cy),
+            "message": f"Tapped element '{label}' at ({cx}, {cy}) on {target_serial}, sir."
+        }
+    return {
+        "success": False,
+        "message": f"No on-screen element matching '{query}' found on {target_serial}, sir."
+    }
+
+
+def type_on_phone(text: str, serial: str = "") -> dict:
+    """Type arbitrary text into the current focused field on the phone."""
+    target_serial = serial
+    if not target_serial:
+        devices = discover_devices()
+        if not devices:
+            return {"success": False, "message": "No mobile device connected via ADB."}
+        target_serial = devices[0]
+
+    escaped = text.replace(" ", "%s").replace("'", "\\'").replace('"', '\\"')
+    _adb("shell", "input", "text", escaped, serial=target_serial)
+    return {"success": True, "text": text, "message": f"Typed \"{text}\" on {target_serial}, sir."}
+
+
+def swipe_on_phone(direction: str = "up", serial: str = "") -> dict:
+    """Swipe across the mobile display: up, down, left, right."""
+    target_serial = serial
+    if not target_serial:
+        devices = discover_devices()
+        if not devices:
+            return {"success": False, "message": "No mobile device connected via ADB."}
+        target_serial = devices[0]
+
+    w, h = _get_screen_dimensions(target_serial)
+    cx, cy = w // 2, h // 2
+    d = direction.lower().strip()
+
+    if d == "up":
+        x1, y1, x2, y2 = cx, int(h * 0.8), cx, int(h * 0.2)
+    elif d == "down":
+        x1, y1, x2, y2 = cx, int(h * 0.2), cx, int(h * 0.8)
+    elif d == "left":
+        x1, y1, x2, y2 = int(w * 0.85), cy, int(w * 0.15), cy
+    elif d == "right":
+        x1, y1, x2, y2 = int(w * 0.15), cy, int(w * 0.85), cy
+    else:
+        return {"success": False, "message": f"Invalid swipe direction '{direction}'."}
+
+    _adb("shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), "300", serial=target_serial)
+    return {"success": True, "direction": d, "message": f"Swiped {d} on {target_serial}, sir."}
+
