@@ -154,27 +154,35 @@ def install_llama_binary() -> Optional[Path]:
 
 def find_local_gguf(preferred: str = "") -> Optional[Path]:
     """Scan ~/.ultron/models/ and existing cache directories for GGUF files."""
+    target_terms = []
+    if preferred in ("default", "qwen", "hacker"):
+        target_terms = ["qwen3.5", "qwen-3.5", "hackermode", "hacker-mode", "qwen"]
+    elif preferred == "light":
+        target_terms = ["1.5b", "light"]
+    elif preferred:
+        target_terms = [preferred.lower()]
+
     # 1. Check ~/.ultron/models/
     if MODELS_DIR.exists():
-        if preferred:
+        if target_terms:
             for p in MODELS_DIR.rglob("*.gguf"):
-                if preferred.lower() in p.name.lower():
+                name_lower = p.name.lower()
+                if any(t in name_lower for t in target_terms):
                     return p
-        models = [p for p in MODELS_DIR.rglob("*.gguf") if p.stat().st_size > 100_000_000]
-        if models:
-            return models[0]
+        else:
+            models = [p for p in MODELS_DIR.rglob("*.gguf") if p.stat().st_size > 100_000_000]
+            if models:
+                return models[0]
 
     # 2. Check ~/.lmstudio/models/ if user has existing models cached
     user_home = Path(os.getenv("USERPROFILE" if sys.platform == "win32" else "HOME", "."))
     lm_models = user_home / ".lmstudio" / "models"
     if lm_models.exists():
-        if preferred:
+        if target_terms:
             for p in lm_models.rglob("*.gguf"):
-                if preferred.lower() in p.name.lower():
+                name_lower = p.name.lower()
+                if any(t in name_lower for t in target_terms):
                     return p
-        models = [p for p in lm_models.rglob("*.gguf") if p.stat().st_size > 100_000_000]
-        if models:
-            return models[0]
 
     return None
 
