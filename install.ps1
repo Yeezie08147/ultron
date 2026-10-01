@@ -152,7 +152,7 @@ Write-Host "$e[38;5;208m$e[1m===================================================
 Write-Host "$e[38;5;208m$e[1m   AI NEURAL BACKEND INITIALIZATION$e[0m"
 Write-Host "$e[38;5;208m$e[1m======================================================================$e[0m"
 Write-Host "  Select an AI model option to configure now (or skip to choose in CLI):"
-Write-Host "    [1] Qwen 3.5 9B Uncensored (5.3 GB) - Supreme Uncensored Intelligence [Recommended]"
+Write-Host "    [1] Hacker Mode (5.3 GB) - Supreme Uncensored Intelligence [Recommended]"
 Write-Host "    [2] Ultra-Light 1.5B (1.1 GB)       - Ultra-Fast, Low RAM (<8GB)"
 Write-Host "    [3] Skip / Pure Autonomous Core     - 0 MB, Instant Offline System Control"
 Write-Host ""

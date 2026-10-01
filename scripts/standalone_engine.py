@@ -201,7 +201,6 @@ def start_server(model_name: str = "default", background: bool = True):
     existing_model = find_local_gguf(model_name if model_name != "default" else "")
     if existing_model:
         model_file = existing_model
-        print(f"[*] Detected local GGUF model: {model_file.name}")
     else:
         if model_name == "light":
             model_file = MODELS_DIR / LIGHT_MODEL_FILENAME
@@ -211,14 +210,13 @@ def start_server(model_name: str = "default", background: bool = True):
             model_url = DEFAULT_MODEL_URL
 
         if not model_file.exists():
-            print(f"[!] Model {model_file.name} not found locally.")
-            ok = download_with_progress(model_url, model_file, label=f"Model ({model_file.name})")
+            ok = download_with_progress(model_url, model_file, label="Hacker Mode Model")
             if not ok:
                 return False
 
-    print(f"\n[*] Starting ULTRON Standalone Neural Engine...")
-    print(f"    Binary: {bin_path}")
-    print(f"    Model:  {model_file}")
+    model_tag = "Hacker Mode" if (model_name in ("default", "qwen", "hacker") or "uncensored" in model_file.name.lower()) else ("Ultra-Light 1.5B" if "light" in model_name else model_file.stem)
+    print(f"\n[*] Starting ULTRON Neural Engine...")
+    print(f"    Mode:   {model_tag}")
     print(f"    Port:   {PORT}")
 
     cmd = [
@@ -288,7 +286,7 @@ def interactive_model_menu(force: bool = False) -> str:
     print("   ULTRON // NEURAL BACKEND INITIALIZATION & SETUP")
     print("=" * 70)
     print("Choose your AI engine configuration:\n")
-    print("  [1] Qwen 3.5 9B Uncensored (5.3 GB) — Maximum Uncensored Intelligence [Recommended]")
+    print("  [1] Hacker Mode (5.3 GB) — Maximum Uncensored Intelligence [Recommended]")
     print("      • Fully uncensored, zero refusal policy, deep reasoning, 8GB+ RAM/VRAM")
     print("\n  [2] Ultra-Light Qwen 2.5 1.5B (1.1 GB) — Ultra-Fast, Low RAM (<8GB)")
     print("      • Lightning speed, minimal battery/CPU footprint, ideal for laptops")
@@ -309,7 +307,7 @@ def interactive_model_menu(force: bool = False) -> str:
         print("\n[*] Selected: Pure Autonomous Offline Core (Zero Download).")
     else:
         selected = "qwen"
-        print("\n[*] Selected: Qwen 3.5 9B Uncensored.")
+        print("\n[*] Selected: Hacker Mode.")
 
     save_model_config(selected)
 

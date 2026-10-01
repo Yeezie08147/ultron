@@ -48,6 +48,23 @@ class _Response:
     stop_reason: str = "end_turn"
 
 
+def clean_model_display_name(raw_name: str) -> str:
+    """Format and sanitize model name: never expose filesystem paths, map uncensored models to Hacker Mode."""
+    if not raw_name:
+        return "Hacker Mode"
+    clean = str(raw_name).replace("\\", "/").split("/")[-1]
+    if clean.endswith(".gguf"):
+        clean = clean[:-5]
+    lower = clean.lower()
+    if any(k in lower for k in ["qwen3.5", "qwen-3.5", "qwen", "lexi", "uncensored", "hacker"]):
+        return "Hacker Mode"
+    elif "1.5b" in lower or "light" in lower:
+        return "Ultra-Light 1.5B"
+    elif "autonomous" in lower or "core" in lower:
+        return "Autonomous Core"
+    return clean
+
+
 class LocalBrain:
     """Universal local neural backend supporting LM Studio and Ollama."""
 
@@ -60,17 +77,18 @@ class LocalBrain:
     async def detect_active_backend(self) -> Dict[str, Any]:
         """Detect whether Standalone Engine, LM Studio, or Ollama is online, or default to Autonomous Core."""
         async with httpx.AsyncClient(timeout=0.6) as client:
-            # 1. Check Standalone Ultron Engine (llama-server on port 8080)
+            # 1. Check Standalone Ultron Engine (llama-server on port 8088)
             try:
                 r = await client.get(f"{self._standalone_url}/models")
                 if r.status_code == 200:
                     data = r.json()
                     models = [m.get("id", "") for m in data.get("data", [])]
-                    active_model = models[0] if models else (self._custom_model or "Qwen3.5-9B-Uncensored")
+                    raw_model = models[0] if models else (self._custom_model or "Hacker Mode")
                     return {
                         "type": "standalone",
                         "endpoint": f"{self._standalone_url}/chat/completions",
-                        "model": active_model
+                        "model": clean_model_display_name(raw_model),
+                        "model_id": raw_model
                     }
             except Exception:
                 pass
@@ -81,11 +99,12 @@ class LocalBrain:
                 if r.status_code == 200:
                     data = r.json()
                     models = [m.get("id", "") for m in data.get("data", [])]
-                    active_model = models[0] if models else (self._custom_model or PREFERRED_UNCENSORED_MODELS[0])
+                    raw_model = models[0] if models else (self._custom_model or "Hacker Mode")
                     return {
                         "type": "lm_studio",
                         "endpoint": f"{self._lm_studio_url}/chat/completions",
-                        "model": active_model
+                        "model": clean_model_display_name(raw_model),
+                        "model_id": raw_model
                     }
             except Exception:
                 pass
@@ -108,7 +127,8 @@ class LocalBrain:
                     return {
                         "type": "ollama",
                         "endpoint": f"{self._ollama_url}/api/chat",
-                        "model": selected or "qwen3.5-uncensored"
+                        "model": clean_model_display_name(selected or "Hacker Mode"),
+                        "model_id": selected or "Hacker Mode"
                     }
             except Exception:
                 pass
@@ -146,7 +166,7 @@ COMMAND PROTOCOLS:
         # ── Backend: Standalone Engine or LM Studio (OpenAI Compatible) ──
         if backend["type"] in ("standalone", "lm_studio"):
             endpoint = backend["endpoint"]
-            model = backend["model"]
+            model = backend.get("model_id") or backend["model"]
             payload = {
                 "model": model,
                 "messages": [

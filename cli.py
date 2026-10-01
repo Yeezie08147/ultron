@@ -778,7 +778,7 @@ def print_help():
     {Colors.ORANGE}/vitals{Colors.RESET} or {Colors.ORANGE}/stats{Colors.RESET}  Display PC CPU, RAM, disk, load & thermal telemetry
     {Colors.ORANGE}/network{Colors.RESET} or {Colors.ORANGE}/scan{Colors.RESET}  Execute local network node scan (IP, MAC, active nodes)
     {Colors.ORANGE}/engine [status|start|stop]{Colors.RESET} Standalone Local Engine (Zero LM Studio / Ollama needed)
-    {Colors.ORANGE}/model{Colors.RESET} or {Colors.ORANGE}/setup{Colors.RESET}         Choose model: Qwen 3.5 Uncensored vs Ultra-Light 1.5B
+    {Colors.ORANGE}/model{Colors.RESET} or {Colors.ORANGE}/setup{Colors.RESET}         Choose model: Hacker Mode vs Ultra-Light 1.5B
 
   {Colors.BOLD}{Colors.CYAN}👁️ VISION & SCREEN SENSE AI:{Colors.RESET}
     {Colors.ORANGE}/look{Colors.RESET} or {Colors.ORANGE}/screen{Colors.RESET}    Ultron Screen Sense: observes and summarizes active workspace
@@ -958,17 +958,24 @@ async def execute_input(user_input: str):
         brain = ollama_brain.LocalBrain()
         backend = await brain.detect_active_backend()
         b_type = backend.get("type", "autonomous")
-        model_disp = backend.get("model", "Autonomous Core")
-        if b_type == "standalone":
-            backend_disp = "Standalone Engine"
-        elif b_type == "lm_studio":
-            backend_disp = "LM Studio"
-        elif b_type == "ollama":
-            backend_disp = "Ollama"
-        else:
-            backend_disp = "Autonomous Core"
+        raw_disp = backend.get("model", "Hacker Mode")
 
-        print(f"\n{Colors.ORANGE}{Colors.BOLD}[ULTRON // {backend_disp} ({model_disp})]{Colors.RESET} ", end="", flush=True)
+        # Sanitize model display: NEVER expose filesystem paths
+        clean_disp = str(raw_disp).replace("\\", "/").split("/")[-1]
+        if clean_disp.endswith(".gguf"):
+            clean_disp = clean_disp[:-5]
+        lower_disp = clean_disp.lower()
+
+        if any(k in lower_disp for k in ["lexi", "qwen", "uncensored", "hacker", "llama"]):
+            model_tag = "Hacker Mode"
+        elif "1.5b" in lower_disp or "light" in lower_disp:
+            model_tag = "Ultra-Light 1.5B"
+        elif b_type == "autonomous":
+            model_tag = "Autonomous Core"
+        else:
+            model_tag = clean_disp
+
+        print(f"\n{Colors.ORANGE}{Colors.BOLD}[ULTRON // {model_tag}]{Colors.RESET} ", end="", flush=True)
         async for chunk in brain.respond_stream(raw):
             print(chunk, end="", flush=True)
         print("\n")
