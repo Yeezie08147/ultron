@@ -30,14 +30,52 @@ function showError(msg: string) {
   }, 5000);
 }
 
+const THINKING_LINES = [
+  "thinking...",
+  "analyzing neural directives...",
+  "evaluating synaptic matrix...",
+  "querying hacker mode weights...",
+  "synthesizing cognitive vectors...",
+  "scanning autonomous protocols...",
+  "calibrating response trajectory...",
+  "accessing deep neural memory...",
+  "resolving heuristic parameters...",
+  "processing system matrices..."
+];
+
+let thinkingInterval: number | null = null;
+let thinkingLineIdx = 0;
+
+function startThinkingLines() {
+  if (thinkingInterval) return;
+  thinkingLineIdx = 0;
+  statusEl.textContent = THINKING_LINES[0];
+  thinkingInterval = window.setInterval(() => {
+    thinkingLineIdx = (thinkingLineIdx + 1) % THINKING_LINES.length;
+    statusEl.textContent = THINKING_LINES[thinkingLineIdx];
+  }, 1400);
+}
+
+function stopThinkingLines() {
+  if (thinkingInterval) {
+    clearInterval(thinkingInterval);
+    thinkingInterval = null;
+  }
+}
+
 function updateStatus(state: State) {
-  const labels: Record<State, string> = {
-    idle: "",
-    listening: "listening...",
-    thinking: "thinking...",
-    speaking: "",
-  };
-  statusEl.textContent = labels[state];
+  if (state === "thinking") {
+    startThinkingLines();
+  } else {
+    stopThinkingLines();
+    const labels: Record<State, string> = {
+      idle: "",
+      listening: "listening...",
+      thinking: "",
+      speaking: "",
+    };
+    statusEl.textContent = labels[state];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +271,7 @@ socket.onMessage((msg) => {
     } else if (state === "working") {
       // Task spawned — show thinking with a different label
       transition("thinking");
+      stopThinkingLines();
       statusEl.textContent = "working...";
     } else if (state === "idle") {
       transition("idle");

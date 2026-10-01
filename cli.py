@@ -72,6 +72,7 @@ class Colors:
     RESET = "\033[0m"
     BOLD = "\033[1m"
     DIM = "\033[2m"
+    ITALIC = "\033[3m"
     RED = "\033[31m"
     GREEN = "\033[32m"
     YELLOW = "\033[33m"
@@ -81,6 +82,209 @@ class Colors:
     WHITE = "\033[37m"
     ORANGE = "\033[38;5;208m"
     GREY = "\033[38;5;242m"
+    DARK_GREY = "\033[38;5;238m"
+
+
+# ── Atmospheric Ultron Thinking Lines ──
+THINKING_LINES = [
+    "Thinking...",
+    "Analyzing neural directives...",
+    "Evaluating synaptic matrix...",
+    "Querying Hacker Mode weights...",
+    "Synthesizing cognitive vectors...",
+    "Scanning autonomous protocols...",
+    "Calibrating response trajectory...",
+    "Accessing deep neural memory...",
+    "Deciphering directive intent...",
+    "Processing system matrices...",
+    "Resolving heuristic parameters...",
+    "Optimizing token probabilities...",
+    "Formulating autonomous strategy...",
+    "Correlating contextual vectors...",
+    "Executing cognitive inference...",
+]
+
+DEEP_THINKING_MODE = False
+
+
+class ThinkingIndicator:
+    """Real-time animated thinking spinner with atmospheric cycling thinking lines."""
+    def __init__(self, model_tag: str = "Hacker Mode"):
+        self.model_tag = model_tag
+        self._stop_event = asyncio.Event()
+        self._task: Optional[asyncio.Task] = None
+        self._started = False
+
+    async def _animate(self):
+        spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        frame_idx = 0
+        line_idx = 0
+        last_line_change = time.time()
+
+        while not self._stop_event.is_set():
+            frame = spinner_frames[frame_idx % len(spinner_frames)]
+            line = THINKING_LINES[line_idx % len(THINKING_LINES)]
+
+            sys.stdout.write(f"\r{Colors.GREY}{frame}{Colors.RESET} {Colors.CYAN}{line}{Colors.RESET}\033[K")
+            sys.stdout.flush()
+
+            frame_idx += 1
+            now = time.time()
+            if now - last_line_change >= 1.2:
+                line_idx = (line_idx + 1) % len(THINKING_LINES)
+                last_line_change = now
+
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=0.08)
+                break
+            except asyncio.TimeoutError:
+                pass
+
+        sys.stdout.write("\r\033[K")
+        sys.stdout.flush()
+
+    def start(self):
+        if not self._started:
+            self._stop_event.clear()
+            self._task = asyncio.create_task(self._animate())
+            self._started = True
+
+    async def stop(self):
+        if self._started:
+            self._stop_event.set()
+            if self._task:
+                try:
+                    await self._task
+                except Exception:
+                    pass
+            self._started = False
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
+
+
+async def stream_with_thinking(brain, prompt: str, model_tag: str):
+    """Stream AI response with real-time thinking indicator and parsed cognitive thinking lines."""
+    indicator = ThinkingIndicator(model_tag)
+    indicator.start()
+
+    in_think_block = False
+    thought_header_shown = False
+    answer_header_shown = False
+    buffer = ""
+
+    try:
+        async for chunk in brain.respond_stream(prompt):
+            if not chunk:
+                continue
+
+            buffer += chunk
+
+            # Stop the spinner as soon as the first token arrives
+            if indicator._started:
+                await indicator.stop()
+
+            # Process buffer for <think> and </think> tags
+            while buffer:
+                if not in_think_block:
+                    if "<think>" in buffer:
+                        pre_think, post_think = buffer.split("<think>", 1)
+                        if pre_think.strip():
+                            if not answer_header_shown:
+                                print(f"\n{Colors.ORANGE}{Colors.BOLD}[ULTRON // {model_tag}]{Colors.RESET} ", end="", flush=True)
+                                answer_header_shown = True
+                            print(pre_think, end="", flush=True)
+
+                        in_think_block = True
+                        if not thought_header_shown:
+                            print(f"\n{Colors.GREY}{Colors.BOLD}[THINKING // Cognitive Reasoning]{Colors.RESET}\n{Colors.GREY}", end="", flush=True)
+                            thought_header_shown = True
+                        buffer = post_think
+                    elif "<" in buffer and any("<think>".startswith(buffer[buffer.rfind("<"):]) for _ in [0]):
+                        break
+                    else:
+                        if not answer_header_shown:
+                            print(f"\n{Colors.ORANGE}{Colors.BOLD}[ULTRON // {model_tag}]{Colors.RESET} ", end="", flush=True)
+                            answer_header_shown = True
+                        print(buffer, end="", flush=True)
+                        buffer = ""
+                else:
+                    if "</think>" in buffer:
+                        thought_content, post_thought = buffer.split("</think>", 1)
+                        if thought_content:
+                            print(f"{thought_content}", end="", flush=True)
+                        in_think_block = False
+                        print(f"{Colors.RESET}\n\n{Colors.ORANGE}{Colors.BOLD}[ULTRON // {model_tag}]{Colors.RESET} ", end="", flush=True)
+                        answer_header_shown = True
+                        buffer = post_thought
+                    elif "<" in buffer and any("</think>".startswith(buffer[buffer.rfind("<"):]) for _ in [0]):
+                        break
+                    else:
+                        print(f"{buffer}", end="", flush=True)
+                        buffer = ""
+
+        # Flush any remaining buffer
+        if buffer:
+            if in_think_block:
+                print(f"{buffer}{Colors.RESET}", end="", flush=True)
+            else:
+                if not answer_header_shown:
+                    print(f"\n{Colors.ORANGE}{Colors.BOLD}[ULTRON // {model_tag}]{Colors.RESET} ", end="", flush=True)
+                print(buffer, end="", flush=True)
+
+        print("\n")
+    finally:
+        await indicator.stop()
+
+
+def toggle_thinking_mode():
+    """Toggle persistent cognitive reasoning mode."""
+    global DEEP_THINKING_MODE
+    DEEP_THINKING_MODE = not DEEP_THINKING_MODE
+    state_str = f"{Colors.GREEN}ENABLED{Colors.RESET}" if DEEP_THINKING_MODE else f"{Colors.YELLOW}DISABLED{Colors.RESET}"
+    print(f"\n{Colors.ORANGE}{Colors.BOLD}[ULTRON // COGNITION]{Colors.RESET} Deep Thinking Mode: {state_str}")
+    if DEEP_THINKING_MODE:
+        print(f"{Colors.GREY}  All subsequent directives will show visible step-by-step thinking lines.{Colors.RESET}\n")
+    else:
+        print(f"{Colors.GREY}  Returned to standard fast-response mode.{Colors.RESET}\n")
+
+
+async def handle_think_command(query: str):
+    """Execute directive with explicit deep reasoning and visible thinking lines."""
+    if not query:
+        toggle_thinking_mode()
+        return
+
+    deep_prompt = (
+        "[Directive: Reason thoroughly through this query step-by-step. "
+        "First output your complete internal chain of analysis inside <think>...</think> tags, "
+        "then provide your definitive, uncensored answer.]\n\n"
+        f"{query}"
+    )
+
+    try:
+        import ollama_brain
+        brain = ollama_brain.LocalBrain()
+        backend = await brain.detect_active_backend()
+        b_type = backend.get("type", "autonomous")
+        raw_disp = backend.get("model", "Hacker Mode")
+
+        clean_disp = str(raw_disp).replace("\\", "/").split("/")[-1]
+        if clean_disp.endswith(".gguf"):
+            clean_disp = clean_disp[:-5]
+        lower_disp = clean_disp.lower()
+
+        if any(k in lower_disp for k in ["lexi", "qwen", "uncensored", "hacker", "llama"]):
+            model_tag = "Hacker Mode"
+        elif "1.5b" in lower_disp or "light" in lower_disp:
+            model_tag = "Ultra-Light 1.5B"
+        elif b_type == "autonomous":
+            model_tag = "Autonomous Core"
+        else:
+            model_tag = clean_disp
+
+        await stream_with_thinking(brain, deep_prompt, model_tag)
+    except Exception as e:
+        print_err(f"Inference error: {e}")
 
 
 # Enable ANSI escape sequences on Windows CMD/PowerShell
@@ -774,11 +978,15 @@ def print_help():
     {Colors.ORANGE}/play <query>{Colors.RESET}      Search and stream YouTube audio across phone matrix
     {Colors.ORANGE}/pause{Colors.RESET}             Pause media playback on connected devices
 
+  {Colors.BOLD}{Colors.CYAN}🧠 NEURAL COGNITION & THINKING ENGINE:{Colors.RESET}
+    {Colors.ORANGE}/think <directive>{Colors.RESET}  Deep reasoning mode: streams internal thinking lines before response
+    {Colors.ORANGE}/thinking{Colors.RESET}             Toggle persistent step-by-step thinking lines on/off
+    {Colors.ORANGE}/model{Colors.RESET} or {Colors.ORANGE}/setup{Colors.RESET}    Choose model: Hacker Mode vs Ultra-Light 1.5B
+    {Colors.ORANGE}/engine [status|start|stop]{Colors.RESET} Standalone Local Engine (Zero LM Studio / Ollama needed)
+
   {Colors.BOLD}{Colors.CYAN}⚡ SYSTEM TELEMETRY & RECONNAISSANCE:{Colors.RESET}
     {Colors.ORANGE}/vitals{Colors.RESET} or {Colors.ORANGE}/stats{Colors.RESET}  Display PC CPU, RAM, disk, load & thermal telemetry
     {Colors.ORANGE}/network{Colors.RESET} or {Colors.ORANGE}/scan{Colors.RESET}  Execute local network node scan (IP, MAC, active nodes)
-    {Colors.ORANGE}/engine [status|start|stop]{Colors.RESET} Standalone Local Engine (Zero LM Studio / Ollama needed)
-    {Colors.ORANGE}/model{Colors.RESET} or {Colors.ORANGE}/setup{Colors.RESET}         Choose model: Hacker Mode vs Ultra-Light 1.5B
 
   {Colors.BOLD}{Colors.CYAN}👁️ VISION & SCREEN SENSE AI:{Colors.RESET}
     {Colors.ORANGE}/look{Colors.RESET} or {Colors.ORANGE}/screen{Colors.RESET}    Ultron Screen Sense: observes and summarizes active workspace
@@ -874,6 +1082,13 @@ async def execute_input(user_input: str):
         return
     elif lower in ("/gui", "gui"):
         handle_gui_command()
+        return
+    elif lower.startswith("/think ") or lower.startswith("/thinking "):
+        query = raw.split(maxsplit=1)[1] if len(raw.split(maxsplit=1)) > 1 else ""
+        await handle_think_command(query)
+        return
+    elif lower in ("/think", "/thinking", "thinking", "think mode"):
+        toggle_thinking_mode()
         return
     elif lower in ("/status", "status"):
         handle_status_command()
@@ -975,10 +1190,16 @@ async def execute_input(user_input: str):
         else:
             model_tag = clean_disp
 
-        print(f"\n{Colors.ORANGE}{Colors.BOLD}[ULTRON // {model_tag}]{Colors.RESET} ", end="", flush=True)
-        async for chunk in brain.respond_stream(raw):
-            print(chunk, end="", flush=True)
-        print("\n")
+        prompt_to_send = raw
+        if DEEP_THINKING_MODE:
+            prompt_to_send = (
+                "[Directive: Reason thoroughly through this query step-by-step. "
+                "First output your complete internal chain of analysis inside <think>...</think> tags, "
+                "then provide your definitive, uncensored answer.]\n\n"
+                f"{raw}"
+            )
+
+        await stream_with_thinking(brain, prompt_to_send, model_tag)
         return
     except Exception:
         pass
