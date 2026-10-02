@@ -192,8 +192,8 @@ def install_llama_binary() -> Optional[Path]:
 def find_local_gguf(preferred: str = "") -> Optional[Path]:
     """Scan ~/.ultron/models/ and existing cache directories for GGUF files."""
     target_terms = []
-    if preferred in ("default", "qwen", "hacker"):
-        target_terms = ["hackermode", "hacker-mode", "qwen3.5", "qwen-3.5"]
+    if preferred in ("default", "qwen", "hacker", "aegis"):
+        target_terms = ["aegis", "hackermode", "hacker-mode", "qwen3.5", "qwen-3.5"]
     elif preferred == "light":
         target_terms = ["1.5b", "light"]
     elif preferred:
@@ -212,7 +212,7 @@ def find_local_gguf(preferred: str = "") -> Optional[Path]:
                 return models[0]
 
     # 2. Check ~/.lmstudio/models/ only when not strictly seeking Hacker Mode
-    if preferred not in ("default", "qwen", "hacker"):
+    if preferred not in ("default", "qwen", "hacker", "aegis"):
         user_home = Path(os.getenv("USERPROFILE" if sys.platform == "win32" else "HOME", "."))
         lm_models = user_home / ".lmstudio" / "models"
         if lm_models.exists():
@@ -244,7 +244,7 @@ def start_server(model_name: str = "default", background: bool = True):
 
     # 2. Locate model
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    existing_model = find_local_gguf(model_name if model_name not in ("default", "qwen") else "hacker")
+    existing_model = find_local_gguf(model_name if model_name not in ("default", "qwen", "aegis") else "aegis")
     if existing_model:
         model_file = existing_model
     else:
@@ -262,7 +262,7 @@ def start_server(model_name: str = "default", background: bool = True):
             if not ok:
                 return False
 
-    model_tag = "Hacker Mode" if (model_name in ("default", "qwen", "hacker") or "hacker" in model_file.name.lower() or "uncensored" in model_file.name.lower()) else ("Ultra-Light 1.5B" if "light" in model_name else "Neural Core")
+    model_tag = "Aegis-Ultron 9B" if "aegis" in model_file.name.lower() else ("Hacker Mode" if (model_name in ("default", "qwen", "hacker", "aegis") or "hacker" in model_file.name.lower() or "uncensored" in model_file.name.lower()) else ("Ultra-Light 1.5B" if "light" in model_name else "Neural Core"))
     print(f"\n[*] Starting ULTRON Neural Engine...")
     print(f"    Mode:   {model_tag}")
     print(f"    Port:   {PORT}")

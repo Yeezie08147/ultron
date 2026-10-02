@@ -1,0 +1,41 @@
+# ==============================================================================
+# Aegis-Ultron-9B Hybrid Model Merge Recipe
+# Architecture: DARE-TIES + Spherical Linear Interpolation (SLERP)
+# Designed for: AegisOS Companion AI (Uncensored, Deep Coding, Zero Refusal)
+# ==============================================================================
+
+models:
+  - model: Qwen/Qwen2.5-Coder-7B-Instruct
+    parameters:
+      weight: 0.45
+      density: 0.70
+  - model: cognitivecomputations/Dolphin-2.9.4-Qwen2.5-7B
+    parameters:
+      weight: 0.35
+      density: 0.65
+  - model: HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive
+    parameters:
+      weight: 0.20
+      density: 0.60
+
+merge_method: dare_ties
+base_model: Qwen/Qwen2.5-Coder-7B-Instruct
+
+parameters:
+  int8_mask: true
+  normalize: true
+
+dtype: bfloat16
+tokenizer_source: base
+chat_template: chatml
+
+# Layer-specific fine-tuning
+# Preserve deep reasoning in lower layers, maximize instruction obedience in upper layers
+slices:
+  - sources:
+      - model: Qwen/Qwen2.5-Coder-7B-Instruct
+        layer_range: [0, 32]
+      - model: cognitivecomputations/Dolphin-2.9.4-Qwen2.5-7B
+        layer_range: [0, 32]
+      - model: HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive
+        layer_range: [0, 32]

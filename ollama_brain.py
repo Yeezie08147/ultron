@@ -56,7 +56,9 @@ def clean_model_display_name(raw_name: str) -> str:
     if clean.endswith(".gguf"):
         clean = clean[:-5]
     lower = clean.lower()
-    if any(k in lower for k in ["qwen3.5", "qwen-3.5", "qwen", "lexi", "uncensored", "hacker"]):
+    if "aegis" in lower:
+        return "Aegis-Ultron-9B"
+    elif any(k in lower for k in ["qwen3.5", "qwen-3.5", "qwen", "lexi", "uncensored", "hacker"]):
         return "Hacker Mode"
     elif "1.5b" in lower or "light" in lower:
         return "Ultra-Light 1.5B"
